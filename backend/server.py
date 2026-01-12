@@ -4799,60 +4799,36 @@ async def sync_from_google_sheets(
         lines = list(csv.reader(io.StringIO(csv_content)))
         
         # Struttura del foglio:
-        # Riga 5 (indice 4): giorni della settimana (lunedi, martedi, etc.)
+        # Riga 3 (indice 2): date in formato DD/MM
         # Riga 6 (indice 5): tipi PICC/MEDICAZIONI
         # Righe 7+ (indice 6+): orari (col 1) e nomi pazienti
         
-        weekdays_row = lines[4] if len(lines) > 4 else []  # Riga 5 = indice 4
+        dates_row = lines[2] if len(lines) > 2 else []
         types_row = lines[5] if len(lines) > 5 else []  # Riga 6 = indice 5
         
-        # Determina il lunedì di riferimento
-        if data.start_date:
-            # Usa la data specificata
-            monday_ref = datetime.strptime(data.start_date, "%Y-%m-%d").date()
-        else:
-            # Usa il lunedì della settimana corrente
-            today = datetime.now().date()
-            monday_ref = today - timedelta(days=today.weekday())
+        year = data.year
         
-        # Mappa giorni italiani a offset dal lunedì
-        day_name_to_offset = {
-            "lunedi": 0, "lunedì": 0,
-            "martedi": 1, "martedì": 1,
-            "mercoledi": 2, "mercoledì": 2,
-            "giovedi": 3, "giovedì": 3,
-            "venerdi": 4, "venerdì": 4,
-            "sabato": 5,
-            "domenica": 6
-        }
+        # Mappa colonne a date (usando le date DD/MM dal foglio)
+        date_for_col = {}
+        current_date = None
+        
+        for col_idx, cell in enumerate(dates_row):
+            cell = cell.strip()
+            if cell and "/" in cell:
+                try:
+                    parts = cell.split("/")
+                    day = int(parts[0])
+                    month = int(parts[1])
+                    current_date = f"{year}-{month:02d}-{day:02d}"
+                except:
+                    pass
+            if current_date:
+                date_for_col[col_idx] = current_date
+        
+        logger.info(f"Date mapping from sheet: {date_for_col}")
         
         # Mappa colonne a date e tipi
-        column_mapping = {}  # {col_index: {"date": "2026-01-12", "tipo": "PICC"}}
-        
-        # Trova i giorni della settimana e calcola le date corrispondenti
-        day_for_col = {}
-        current_day_offset = None
-        
-        for col_idx, cell in enumerate(weekdays_row):
-            cell_clean = cell.strip().lower().replace(" ", "")
-            if cell_clean in day_name_to_offset:
-                current_day_offset = day_name_to_offset[cell_clean]
-            if current_day_offset is not None:
-                day_for_col[col_idx] = current_day_offset
-        
-        # Calcola le date effettive per ogni colonna (prima settimana)
-        date_for_col = {}
-        for col_idx, day_offset in day_for_col.items():
-            target_date = monday_ref + timedelta(days=day_offset)
-            date_for_col[col_idx] = {
-                "date": target_date.strftime("%Y-%m-%d"),
-                "day_offset": day_offset  # Salva l'offset per replicare nelle settimane successive
-            }
-        
-        logger.info(f"Date mapping (starting from {monday_ref}, {data.weeks} weeks): {date_for_col}")
-        
-        # Ora associa le colonne ai tipi PICC/MED
-        # La data si propaga alle colonne successive fino alla prossima data
+        column_mapping = {}
         date_boundaries = sorted(date_for_col.keys())
         
         for col_idx, cell in enumerate(types_row):
@@ -4861,23 +4837,22 @@ async def sync_from_google_sheets(
                 continue
                 
             # Trova la data più vicina a sinistra
-            closest_info = None
+            closest_date = None
             for boundary in reversed(date_boundaries):
                 if boundary <= col_idx:
-                    closest_info = date_for_col[boundary]
+                    closest_date = date_for_col[boundary]
                     break
             
-            if closest_info:
+            if closest_date:
                 if "PICC" in tipo_cell and "MED" not in tipo_cell:
-                    column_mapping[col_idx] = {"day_offset": closest_info["day_offset"], "tipo": "PICC"}
+                    column_mapping[col_idx] = {"date": closest_date, "tipo": "PICC"}
                 elif "MED" in tipo_cell:
-                    column_mapping[col_idx] = {"day_offset": closest_info["day_offset"], "tipo": "MED"}
+                    column_mapping[col_idx] = {"date": closest_date, "tipo": "MED"}
         
         logger.info(f"Column mapping: {column_mapping}")
         
         # Parse appuntamenti dalle righe successive (dalla riga 7 = indice 6)
-        # Salviamo i "template" degli appuntamenti (senza data specifica)
-        appointment_templates = []
+        appointments_to_create = []
         patients_to_create = set()  # Set di (cognome, nome) per evitare duplicati
         
         for row_idx, row in enumerate(lines[6:], start=6):  # Inizia dalla riga 7
@@ -4913,27 +4888,13 @@ async def sync_from_google_sheets(
                                     nome = " ".join(parts[1:]).capitalize() if len(parts) > 1 else ""
                                     
                                     patients_to_create.add((cognome, nome))
-                                    appointment_templates.append({
-                                        "day_offset": mapping["day_offset"],
+                                    appointments_to_create.append({
+                                        "date": mapping["date"],
                                         "ora": ora,
                                         "tipo": mapping["tipo"],
                                         "cognome": cognome,
                                         "nome": nome
                                     })
-        
-        # Ora crea gli appuntamenti per tutte le settimane richieste
-        appointments_to_create = []
-        for week in range(data.weeks):
-            week_monday = monday_ref + timedelta(weeks=week)
-            for template in appointment_templates:
-                apt_date = week_monday + timedelta(days=template["day_offset"])
-                appointments_to_create.append({
-                    "date": apt_date.strftime("%Y-%m-%d"),
-                    "ora": template["ora"],
-                    "tipo": template["tipo"],
-                    "cognome": template["cognome"],
-                    "nome": template["nome"]
-                })
         
         # Crea/trova pazienti e appuntamenti
         created_patients = 0
