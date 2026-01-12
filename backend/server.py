@@ -4922,104 +4922,6 @@ async def sync_from_google_sheets(
         
         logger.info(f"Totale: {len(all_appointments)} appuntamenti da {len(sheets_processed)} fogli")
         
-        # Struttura del foglio:
-        # Riga 3 (indice 2): date in formato DD/MM
-        # Riga 6 (indice 5): tipi PICC/MEDICAZIONI
-        # Righe 7+ (indice 6+): orari (col 1) e nomi pazienti
-        
-        dates_row = lines[2] if len(lines) > 2 else []
-        types_row = lines[5] if len(lines) > 5 else []  # Riga 6 = indice 5
-        
-        year = data.year
-        
-        # Mappa colonne a date (usando le date DD/MM dal foglio)
-        date_for_col = {}
-        current_date = None
-        
-        for col_idx, cell in enumerate(dates_row):
-            cell = cell.strip()
-            if cell and "/" in cell:
-                try:
-                    parts = cell.split("/")
-                    day = int(parts[0])
-                    month = int(parts[1])
-                    current_date = f"{year}-{month:02d}-{day:02d}"
-                except:
-                    pass
-            if current_date:
-                date_for_col[col_idx] = current_date
-        
-        logger.info(f"Date mapping from sheet: {date_for_col}")
-        
-        # Mappa colonne a date e tipi
-        column_mapping = {}
-        date_boundaries = sorted(date_for_col.keys())
-        
-        for col_idx, cell in enumerate(types_row):
-            tipo_cell = cell.strip().upper()
-            if not tipo_cell:
-                continue
-                
-            # Trova la data più vicina a sinistra
-            closest_date = None
-            for boundary in reversed(date_boundaries):
-                if boundary <= col_idx:
-                    closest_date = date_for_col[boundary]
-                    break
-            
-            if closest_date:
-                if "PICC" in tipo_cell and "MED" not in tipo_cell:
-                    column_mapping[col_idx] = {"date": closest_date, "tipo": "PICC"}
-                elif "MED" in tipo_cell:
-                    column_mapping[col_idx] = {"date": closest_date, "tipo": "MED"}
-        
-        logger.info(f"Column mapping: {column_mapping}")
-        
-        # Parse appuntamenti dalle righe successive (dalla riga 7 = indice 6)
-        appointments_to_create = []
-        patients_to_create = set()  # Set di (cognome, nome) per evitare duplicati
-        
-        for row_idx, row in enumerate(lines[6:], start=6):  # Inizia dalla riga 7
-            # Trova l'orario nella colonna B (indice 1)
-            ora = None
-            ora_cell = row[1].strip() if len(row) > 1 else ""
-            if ora_cell and ":" in ora_cell:
-                # Verifica formato orario HH:MM
-                if regex_module.match(r'^\d{1,2}:\d{2}$', ora_cell):
-                    ora = ora_cell if len(ora_cell) == 5 else f"0{ora_cell}"
-            
-            if not ora:
-                continue
-            
-            # Scansiona le colonne mappate
-            for col_idx, mapping in column_mapping.items():
-                if col_idx < len(row):
-                    cell = row[col_idx].strip()
-                    if cell and cell not in ["", "-"]:
-                        # Può contenere più nomi separati da / o ,
-                        names = regex_module.split(r'[/,]', cell)
-                        for name in names:
-                            name = name.strip()
-                            if name and len(name) > 1:
-                                # Ignora note come "rim picc", "controllo", etc.
-                                if any(kw in name.lower() for kw in ["controllo", "rim ", "non funzionante", "picc port", "idline", "clody im", "spatoliatore"]):
-                                    continue
-                                
-                                # Estrai cognome (primo elemento)
-                                parts = name.split()
-                                if parts:
-                                    cognome = parts[0].capitalize()
-                                    nome = " ".join(parts[1:]).capitalize() if len(parts) > 1 else ""
-                                    
-                                    patients_to_create.add((cognome, nome))
-                                    appointments_to_create.append({
-                                        "date": mapping["date"],
-                                        "ora": ora,
-                                        "tipo": mapping["tipo"],
-                                        "cognome": cognome,
-                                        "nome": nome
-                                    })
-        
         # Crea/trova pazienti e appuntamenti
         created_patients = 0
         created_appointments = 0
@@ -5027,7 +4929,7 @@ async def sync_from_google_sheets(
         
         patient_id_map = {}  # {(cognome, nome): patient_id}
         
-        for cognome, nome in patients_to_create:
+        for cognome, nome in all_patients:
             # Cerca paziente esistente
             query = {"cognome": {"$regex": f"^{cognome}$", "$options": "i"}, "ambulatorio": data.ambulatorio.value}
             if nome:
@@ -5046,7 +4948,7 @@ async def sync_from_google_sheets(
                 
                 # Determina tipo paziente basato sugli appuntamenti
                 patient_tipos = set()
-                for apt in appointments_to_create:
+                for apt in all_appointments:
                     if apt["cognome"] == cognome and apt["nome"] == nome:
                         patient_tipos.add(apt["tipo"])
                 
