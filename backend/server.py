@@ -4808,24 +4808,43 @@ async def sync_from_google_sheets(
         weekdays_row = lines[4] if len(lines) > 4 else []  # Riga 5 = indice 4
         types_row = lines[5] if len(lines) > 5 else []  # Riga 6 = indice 5
         
-        # Mappa colonne a date e tipi
-        column_mapping = {}  # {col_index: {"date": "2025-01-05", "tipo": "PICC"}}
+        # Calcola le date della settimana corrente
+        today = datetime.now().date()
+        # Trova il lunedì della settimana corrente
+        monday_this_week = today - timedelta(days=today.weekday())
         
-        # Prima trova le date (si propagano alle colonne successive fino alla prossima data)
+        # Mappa giorni italiani a offset dal lunedì
+        day_name_to_offset = {
+            "lunedi": 0, "lunedì": 0,
+            "martedi": 1, "martedì": 1,
+            "mercoledi": 2, "mercoledì": 2,
+            "giovedi": 3, "giovedì": 3,
+            "venerdi": 4, "venerdì": 4,
+            "sabato": 5,
+            "domenica": 6
+        }
+        
+        # Mappa colonne a date e tipi
+        column_mapping = {}  # {col_index: {"date": "2026-01-12", "tipo": "PICC"}}
+        
+        # Trova i giorni della settimana e calcola le date corrispondenti
+        day_for_col = {}
+        current_day_offset = None
+        
+        for col_idx, cell in enumerate(weekdays_row):
+            cell_clean = cell.strip().lower().replace(" ", "")
+            if cell_clean in day_name_to_offset:
+                current_day_offset = day_name_to_offset[cell_clean]
+            if current_day_offset is not None:
+                day_for_col[col_idx] = current_day_offset
+        
+        # Calcola le date effettive per ogni colonna
         date_for_col = {}
-        current_date = None
-        for col_idx, cell in enumerate(dates_row):
-            cell = cell.strip()
-            if cell and "/" in cell:
-                try:
-                    parts = cell.split("/")
-                    day = int(parts[0])
-                    month = int(parts[1])
-                    current_date = f"{year}-{month:02d}-{day:02d}"
-                except:
-                    pass
-            if current_date:
-                date_for_col[col_idx] = current_date
+        for col_idx, day_offset in day_for_col.items():
+            target_date = monday_this_week + timedelta(days=day_offset)
+            date_for_col[col_idx] = target_date.strftime("%Y-%m-%d")
+        
+        logger.info(f"Date mapping: {date_for_col}")
         
         # Ora associa le colonne ai tipi PICC/MED
         # La data si propaga alle colonne successive fino alla prossima data
