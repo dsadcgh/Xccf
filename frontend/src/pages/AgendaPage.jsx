@@ -639,6 +639,18 @@ export default function AgendaPage() {
               Gestisci Chiusure ({closedSlots.length})
             </Button>
           )}
+
+          {/* Pulsante Sincronizza Google Sheets */}
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => setSyncDialogOpen(true)}
+            className="ml-2 text-blue-600 border-blue-300 hover:bg-blue-50"
+            data-testid="sync-google-sheets-btn"
+          >
+            <FileSpreadsheet className="w-4 h-4 mr-2" />
+            Sincronizza Sheets
+          </Button>
         </div>
       </div>
 
