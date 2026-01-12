@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="it" translate="no">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="google" content="notranslate" />
+        <meta http-equiv="Content-Language" content="it" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="theme-color" content="#1a56db" />
+        <meta name="description" content="Ambulatorio Infermieristico - Gestione Pazienti" />
+        <title>Ambulatorio Infermieristico</title>
+        <script src="https://assets.emergent.sh/scripts/emergent-main.js"></script>
+        <script>
+            // Only load visual edit scripts when inside an iframe
+            if (window.self !== window.top) {
+                var debugMonitorScript = document.createElement('script');
+                debugMonitorScript.src = 'https://assets.emergent.sh/scripts/debug-monitor.js';
+                document.head.appendChild(debugMonitorScript);
+
+                window.tailwind = window.tailwind || {};
+                tailwind.config = {
+                    corePlugins: { preflight: false },
+                };
+
+                var tailwindScript = document.createElement('script');
+                tailwindScript.src = 'https://cdn.tailwindcss.com';
+                document.head.appendChild(tailwindScript);
+            }
+        </script>
+    </head>
+    <body class="notranslate">
+        <noscript>You need to enable JavaScript to run this app.</noscript>
+        <div id="root"></div>
+    </body>
+</html>
