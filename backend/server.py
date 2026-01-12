@@ -4762,6 +4762,279 @@ async def clear_ai_history(
     
     return {"deleted": result.deleted_count}
 
+# ============== GOOGLE SHEETS SYNC ==============
+import csv
+import httpx
+import re as regex_module
+
+GOOGLE_SHEET_ID = "1gO9i0IuoReM0yto7GqQlIMWjdrzDToDWJ9dQ8z0badE"
+
+class GoogleSheetsSyncRequest(BaseModel):
+    ambulatorio: Ambulatorio
+    sheet_id: Optional[str] = None
+    year: Optional[int] = None  # Anno per interpretare le date
+
+@api_router.post("/sync/google-sheets")
+async def sync_from_google_sheets(
+    data: GoogleSheetsSyncRequest,
+    payload: dict = Depends(verify_token)
+):
+    """Sincronizza appuntamenti da Google Sheets"""
+    if data.ambulatorio.value not in payload["ambulatori"]:
+        raise HTTPException(status_code=403, detail="Non hai accesso a questo ambulatorio")
+    
+    sheet_id = data.sheet_id or GOOGLE_SHEET_ID
+    year = data.year or datetime.now().year
+    
+    try:
+        # Scarica il foglio come CSV
+        csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(csv_url, timeout=30.0)
+            if response.status_code != 200:
+                raise HTTPException(status_code=400, detail="Impossibile accedere al foglio Google. Verifica che sia pubblico.")
+        
+        # Parse CSV
+        csv_content = response.text
+        lines = list(csv.reader(io.StringIO(csv_content)))
+        
+        # Trova le date nella riga 3 (indice 2)
+        dates_row = lines[2] if len(lines) > 2 else []
+        # Trova i tipi (PICC/MEDICAZIONI) nella riga 4 (indice 3)
+        types_row = lines[3] if len(lines) > 3 else []
+        
+        # Mappa colonne a date e tipi
+        column_mapping = {}  # {col_index: {"date": "2025-01-05", "tipo": "PICC"}}
+        
+        current_date = None
+        for col_idx, cell in enumerate(dates_row):
+            cell = cell.strip()
+            if cell and "/" in cell:
+                # Parse data DD/MM
+                try:
+                    parts = cell.split("/")
+                    day = int(parts[0])
+                    month = int(parts[1])
+                    current_date = f"{year}-{month:02d}-{day:02d}"
+                except:
+                    pass
+            if current_date and col_idx < len(types_row):
+                tipo_cell = types_row[col_idx].strip().upper()
+                if "PICC" in tipo_cell:
+                    column_mapping[col_idx] = {"date": current_date, "tipo": "PICC"}
+                elif "MED" in tipo_cell:
+                    column_mapping[col_idx] = {"date": current_date, "tipo": "MED"}
+        
+        # Parse appuntamenti dalle righe successive
+        appointments_to_create = []
+        patients_to_create = set()  # Set di (cognome, nome) per evitare duplicati
+        
+        for row_idx, row in enumerate(lines[4:], start=4):  # Inizia dalla riga 5
+            # Trova l'orario nella colonna B (indice 1)
+            ora = None
+            for cell in row[:3]:
+                cell = cell.strip()
+                if cell and ":" in cell:
+                    # Verifica formato orario HH:MM
+                    if regex_module.match(r'^\d{1,2}:\d{2}$', cell):
+                        ora = cell if len(cell) == 5 else f"0{cell}"
+                        break
+            
+            if not ora:
+                continue
+            
+            # Scansiona le colonne mappate
+            for col_idx, mapping in column_mapping.items():
+                if col_idx < len(row):
+                    cell = row[col_idx].strip()
+                    if cell and cell not in ["", "-"]:
+                        # Può contenere più nomi separati da / o ,
+                        names = regex_module.split(r'[/,]', cell)
+                        for name in names:
+                            name = name.strip()
+                            if name and len(name) > 1:
+                                # Ignora note come "rim picc", "controllo", etc.
+                                if any(kw in name.lower() for kw in ["controllo", "rim ", "non funzionante", "picc port", "idline"]):
+                                    continue
+                                
+                                # Estrai cognome (primo elemento)
+                                parts = name.split()
+                                if parts:
+                                    cognome = parts[0].capitalize()
+                                    nome = " ".join(parts[1:]).capitalize() if len(parts) > 1 else ""
+                                    
+                                    patients_to_create.add((cognome, nome))
+                                    appointments_to_create.append({
+                                        "date": mapping["date"],
+                                        "ora": ora,
+                                        "tipo": mapping["tipo"],
+                                        "cognome": cognome,
+                                        "nome": nome
+                                    })
+        
+        # Crea/trova pazienti e appuntamenti
+        created_patients = 0
+        created_appointments = 0
+        skipped_appointments = 0
+        
+        patient_id_map = {}  # {(cognome, nome): patient_id}
+        
+        for cognome, nome in patients_to_create:
+            # Cerca paziente esistente
+            query = {"cognome": {"$regex": f"^{cognome}$", "$options": "i"}, "ambulatorio": data.ambulatorio.value}
+            if nome:
+                query["nome"] = {"$regex": f"^{nome}$", "$options": "i"}
+            
+            existing = await db.patients.find_one(query, {"_id": 0})
+            
+            if existing:
+                patient_id_map[(cognome, nome)] = existing["id"]
+            else:
+                # Crea nuovo paziente
+                new_patient_id = str(uuid.uuid4())
+                codice_paziente = generate_patient_code(nome or "X", cognome)
+                while await db.patients.find_one({"codice_paziente": codice_paziente}):
+                    codice_paziente = generate_patient_code(nome or "X", cognome)
+                
+                # Determina tipo paziente basato sugli appuntamenti
+                patient_tipos = set()
+                for apt in appointments_to_create:
+                    if apt["cognome"] == cognome and apt["nome"] == nome:
+                        patient_tipos.add(apt["tipo"])
+                
+                if "PICC" in patient_tipos and "MED" in patient_tipos:
+                    patient_tipo = "PICC_MED"
+                elif "PICC" in patient_tipos:
+                    patient_tipo = "PICC"
+                else:
+                    patient_tipo = "MED"
+                
+                new_patient = {
+                    "id": new_patient_id,
+                    "codice_paziente": codice_paziente,
+                    "nome": nome or "",
+                    "cognome": cognome,
+                    "tipo": patient_tipo,
+                    "ambulatorio": data.ambulatorio.value,
+                    "status": "in_cura",
+                    "scheda_med_counter": 0,
+                    "lesion_markers": [],
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                }
+                await db.patients.insert_one(new_patient)
+                patient_id_map[(cognome, nome)] = new_patient_id
+                created_patients += 1
+        
+        # Crea appuntamenti
+        for apt in appointments_to_create:
+            patient_id = patient_id_map.get((apt["cognome"], apt["nome"]))
+            if not patient_id:
+                continue
+            
+            # Verifica se esiste già un appuntamento per questo paziente in questo slot
+            existing_apt = await db.appointments.find_one({
+                "patient_id": patient_id,
+                "data": apt["date"],
+                "ora": apt["ora"],
+                "ambulatorio": data.ambulatorio.value
+            })
+            
+            if existing_apt:
+                skipped_appointments += 1
+                continue
+            
+            # Crea appuntamento
+            new_apt = {
+                "id": str(uuid.uuid4()),
+                "patient_id": patient_id,
+                "patient_nome": apt["nome"],
+                "patient_cognome": apt["cognome"],
+                "ambulatorio": data.ambulatorio.value,
+                "data": apt["date"],
+                "ora": apt["ora"],
+                "tipo": apt["tipo"],
+                "prestazioni": ["medicazione_semplice"] if apt["tipo"] == "MED" else ["medicazione_semplice", "irrigazione_catetere"],
+                "note": "Importato da Google Sheets",
+                "stato": "da_fare",
+                "completed": False,
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+            await db.appointments.insert_one(new_apt)
+            created_appointments += 1
+        
+        return {
+            "success": True,
+            "message": f"Sincronizzazione completata",
+            "created_patients": created_patients,
+            "created_appointments": created_appointments,
+            "skipped_appointments": skipped_appointments,
+            "total_parsed": len(appointments_to_create)
+        }
+        
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Timeout nella connessione a Google Sheets")
+    except Exception as e:
+        logger.error(f"Google Sheets sync error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Errore nella sincronizzazione: {str(e)}")
+
+@api_router.get("/sync/google-sheets/preview")
+async def preview_google_sheets_sync(
+    ambulatorio: Ambulatorio,
+    sheet_id: Optional[str] = None,
+    year: Optional[int] = None,
+    payload: dict = Depends(verify_token)
+):
+    """Anteprima dei dati da Google Sheets senza salvarli"""
+    if ambulatorio.value not in payload["ambulatori"]:
+        raise HTTPException(status_code=403, detail="Non hai accesso a questo ambulatorio")
+    
+    sheet_id = sheet_id or GOOGLE_SHEET_ID
+    year = year or datetime.now().year
+    
+    try:
+        csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(csv_url, timeout=30.0)
+            if response.status_code != 200:
+                raise HTTPException(status_code=400, detail="Impossibile accedere al foglio Google")
+        
+        csv_content = response.text
+        lines = list(csv.reader(io.StringIO(csv_content)))
+        
+        # Estrai date dalla riga 3
+        dates_row = lines[2] if len(lines) > 2 else []
+        dates_found = []
+        for cell in dates_row:
+            cell = cell.strip()
+            if cell and "/" in cell:
+                try:
+                    parts = cell.split("/")
+                    day = int(parts[0])
+                    month = int(parts[1])
+                    dates_found.append(f"{year}-{month:02d}-{day:02d}")
+                except:
+                    pass
+        
+        # Conta righe con dati
+        data_rows = 0
+        for row in lines[4:]:
+            if any(cell.strip() for cell in row):
+                data_rows += 1
+        
+        return {
+            "success": True,
+            "sheet_id": sheet_id,
+            "dates_found": list(set(dates_found)),
+            "data_rows": data_rows,
+            "preview": lines[:10]  # Prime 10 righe come anteprima
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore: {str(e)}")
+
 # Include the router in the main app
 app.include_router(api_router)
 
