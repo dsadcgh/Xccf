@@ -4806,10 +4806,14 @@ async def sync_from_google_sheets(
         weekdays_row = lines[4] if len(lines) > 4 else []  # Riga 5 = indice 4
         types_row = lines[5] if len(lines) > 5 else []  # Riga 6 = indice 5
         
-        # Calcola le date della settimana corrente
-        today = datetime.now().date()
-        # Trova il lunedì della settimana corrente
-        monday_this_week = today - timedelta(days=today.weekday())
+        # Determina il lunedì di riferimento
+        if data.start_date:
+            # Usa la data specificata
+            monday_ref = datetime.strptime(data.start_date, "%Y-%m-%d").date()
+        else:
+            # Usa il lunedì della settimana corrente
+            today = datetime.now().date()
+            monday_ref = today - timedelta(days=today.weekday())
         
         # Mappa giorni italiani a offset dal lunedì
         day_name_to_offset = {
