@@ -134,6 +134,33 @@ export default function AgendaPage() {
 
   const isVillaGinestre = ambulatorio === "villa_ginestre";
 
+  // Sincronizza con Google Sheets
+  const handleGoogleSheetsSync = async () => {
+    setSyncLoading(true);
+    try {
+      const response = await apiClient.post("/sync/google-sheets", {
+        ambulatorio,
+        year: currentDate.getFullYear()
+      });
+      
+      if (response.data.success) {
+        toast.success(
+          `Sincronizzazione completata!\n` +
+          `${response.data.created_patients} nuovi pazienti\n` +
+          `${response.data.created_appointments} nuovi appuntamenti`
+        );
+        // Ricarica i dati
+        fetchData();
+      }
+    } catch (error) {
+      console.error("Sync error:", error);
+      toast.error(error.response?.data?.detail || "Errore nella sincronizzazione");
+    } finally {
+      setSyncLoading(false);
+      setSyncDialogOpen(false);
+    }
+  };
+
   // Naviga alla cartella clinica del paziente
   const goToPatientFolder = (patientId) => {
     navigate(`/pazienti/${patientId}`);
