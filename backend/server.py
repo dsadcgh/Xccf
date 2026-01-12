@@ -4784,7 +4784,6 @@ async def sync_from_google_sheets(
         raise HTTPException(status_code=403, detail="Non hai accesso a questo ambulatorio")
     
     sheet_id = data.sheet_id or GOOGLE_SHEET_ID
-    year = data.year or datetime.now().year
     
     try:
         # Scarica il foglio come CSV
