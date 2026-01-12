@@ -4799,19 +4799,23 @@ async def sync_from_google_sheets(
         csv_content = response.text
         lines = list(csv.reader(io.StringIO(csv_content)))
         
-        # Trova le date nella riga 3 (indice 2)
+        # Struttura del foglio:
+        # Riga 3 (indice 2): date in formato DD/MM
+        # Riga 7 (indice 6): tipi PICC/MEDICAZIONI
+        # Righe successive: orari e nomi pazienti
+        
         dates_row = lines[2] if len(lines) > 2 else []
-        # Trova i tipi (PICC/MEDICAZIONI) nella riga 4 (indice 3)
-        types_row = lines[3] if len(lines) > 3 else []
+        types_row = lines[6] if len(lines) > 6 else []  # Riga 7 = indice 6
         
         # Mappa colonne a date e tipi
         column_mapping = {}  # {col_index: {"date": "2025-01-05", "tipo": "PICC"}}
         
+        # Prima trova le date (si propagano alle colonne successive fino alla prossima data)
         current_date = None
+        date_for_col = {}
         for col_idx, cell in enumerate(dates_row):
             cell = cell.strip()
             if cell and "/" in cell:
-                # Parse data DD/MM
                 try:
                     parts = cell.split("/")
                     day = int(parts[0])
@@ -4819,18 +4823,33 @@ async def sync_from_google_sheets(
                     current_date = f"{year}-{month:02d}-{day:02d}"
                 except:
                     pass
-            if current_date and col_idx < len(types_row):
-                tipo_cell = types_row[col_idx].strip().upper()
-                if "PICC" in tipo_cell:
-                    column_mapping[col_idx] = {"date": current_date, "tipo": "PICC"}
-                elif "MED" in tipo_cell:
-                    column_mapping[col_idx] = {"date": current_date, "tipo": "MED"}
+            if current_date:
+                date_for_col[col_idx] = current_date
         
-        # Parse appuntamenti dalle righe successive
+        # Ora associa le colonne ai tipi PICC/MED
+        for col_idx, cell in enumerate(types_row):
+            tipo_cell = cell.strip().upper()
+            if col_idx in date_for_col or any(c in date_for_col and c < col_idx for c in date_for_col):
+                # Trova la data più vicina a sinistra
+                closest_date = None
+                for c in sorted(date_for_col.keys(), reverse=True):
+                    if c <= col_idx:
+                        closest_date = date_for_col[c]
+                        break
+                
+                if closest_date:
+                    if "PICC" in tipo_cell and "MED" not in tipo_cell:
+                        column_mapping[col_idx] = {"date": closest_date, "tipo": "PICC"}
+                    elif "MED" in tipo_cell:
+                        column_mapping[col_idx] = {"date": closest_date, "tipo": "MED"}
+        
+        logger.info(f"Column mapping: {column_mapping}")
+        
+        # Parse appuntamenti dalle righe successive (dalla riga 8 = indice 7)
         appointments_to_create = []
         patients_to_create = set()  # Set di (cognome, nome) per evitare duplicati
         
-        for row_idx, row in enumerate(lines[4:], start=4):  # Inizia dalla riga 5
+        for row_idx, row in enumerate(lines[7:], start=7):  # Inizia dalla riga 8
             # Trova l'orario nella colonna B (indice 1)
             ora = None
             for cell in row[:3]:
@@ -4855,7 +4874,7 @@ async def sync_from_google_sheets(
                             name = name.strip()
                             if name and len(name) > 1:
                                 # Ignora note come "rim picc", "controllo", etc.
-                                if any(kw in name.lower() for kw in ["controllo", "rim ", "non funzionante", "picc port", "idline"]):
+                                if any(kw in name.lower() for kw in ["controllo", "rim ", "non funzionante", "picc port", "idline", "clody im"]):
                                     continue
                                 
                                 # Estrai cognome (primo elemento)
