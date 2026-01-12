@@ -1232,6 +1232,63 @@ export default function AgendaPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog Sincronizza Google Sheets */}
+      <Dialog open={syncDialogOpen} onOpenChange={setSyncDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="w-5 h-5 text-blue-600" />
+              Sincronizza con Google Sheets
+            </DialogTitle>
+            <DialogDescription>
+              Importa appuntamenti dal foglio Google collegato. I pazienti e gli appuntamenti mancanti verranno creati automaticamente.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-800">
+                <strong>Cosa verrà importato:</strong>
+              </p>
+              <ul className="text-sm text-blue-700 mt-2 space-y-1">
+                <li>• Nuovi pazienti non presenti nel sistema</li>
+                <li>• Appuntamenti PICC e MED dal foglio</li>
+                <li>• Gli appuntamenti esistenti non verranno duplicati</li>
+              </ul>
+            </div>
+
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-sm text-amber-800">
+                ⚠️ Assicurati che il foglio Google sia <strong>pubblico in lettura</strong>
+              </p>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setSyncDialogOpen(false)}>
+              Annulla
+            </Button>
+            <Button 
+              onClick={handleGoogleSheetsSync}
+              disabled={syncLoading}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {syncLoading ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  Sincronizzando...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Sincronizza Ora
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
