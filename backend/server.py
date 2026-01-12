@@ -4799,7 +4799,6 @@ async def sync_from_google_sheets(
         lines = list(csv.reader(io.StringIO(csv_content)))
         
         # Struttura del foglio:
-        # Riga 3 (indice 2): date in formato DD/MM
         # Riga 5 (indice 4): giorni della settimana (lunedi, martedi, etc.)
         # Riga 6 (indice 5): tipi PICC/MEDICAZIONI
         # Righe 7+ (indice 6+): orari (col 1) e nomi pazienti
