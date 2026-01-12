@@ -4801,18 +4801,18 @@ async def sync_from_google_sheets(
         
         # Struttura del foglio:
         # Riga 3 (indice 2): date in formato DD/MM
-        # Riga 7 (indice 6): tipi PICC/MEDICAZIONI
-        # Righe successive: orari e nomi pazienti
+        # Riga 6 (indice 5): tipi PICC/MEDICAZIONI
+        # Righe 7+ (indice 6+): orari (col 1) e nomi pazienti
         
         dates_row = lines[2] if len(lines) > 2 else []
-        types_row = lines[6] if len(lines) > 6 else []  # Riga 7 = indice 6
+        types_row = lines[5] if len(lines) > 5 else []  # Riga 6 = indice 5
         
         # Mappa colonne a date e tipi
         column_mapping = {}  # {col_index: {"date": "2025-01-05", "tipo": "PICC"}}
         
         # Prima trova le date (si propagano alle colonne successive fino alla prossima data)
-        current_date = None
         date_for_col = {}
+        current_date = None
         for col_idx, cell in enumerate(dates_row):
             cell = cell.strip()
             if cell and "/" in cell:
@@ -4827,38 +4827,41 @@ async def sync_from_google_sheets(
                 date_for_col[col_idx] = current_date
         
         # Ora associa le colonne ai tipi PICC/MED
+        # La data si propaga alle colonne successive fino alla prossima data
+        date_boundaries = sorted(date_for_col.keys())
+        
         for col_idx, cell in enumerate(types_row):
             tipo_cell = cell.strip().upper()
-            if col_idx in date_for_col or any(c in date_for_col and c < col_idx for c in date_for_col):
-                # Trova la data più vicina a sinistra
-                closest_date = None
-                for c in sorted(date_for_col.keys(), reverse=True):
-                    if c <= col_idx:
-                        closest_date = date_for_col[c]
-                        break
+            if not tipo_cell:
+                continue
                 
-                if closest_date:
-                    if "PICC" in tipo_cell and "MED" not in tipo_cell:
-                        column_mapping[col_idx] = {"date": closest_date, "tipo": "PICC"}
-                    elif "MED" in tipo_cell:
-                        column_mapping[col_idx] = {"date": closest_date, "tipo": "MED"}
+            # Trova la data più vicina a sinistra
+            closest_date = None
+            for boundary in reversed(date_boundaries):
+                if boundary <= col_idx:
+                    closest_date = date_for_col[boundary]
+                    break
+            
+            if closest_date:
+                if "PICC" in tipo_cell and "MED" not in tipo_cell:
+                    column_mapping[col_idx] = {"date": closest_date, "tipo": "PICC"}
+                elif "MED" in tipo_cell:
+                    column_mapping[col_idx] = {"date": closest_date, "tipo": "MED"}
         
         logger.info(f"Column mapping: {column_mapping}")
         
-        # Parse appuntamenti dalle righe successive (dalla riga 8 = indice 7)
+        # Parse appuntamenti dalle righe successive (dalla riga 7 = indice 6)
         appointments_to_create = []
         patients_to_create = set()  # Set di (cognome, nome) per evitare duplicati
         
-        for row_idx, row in enumerate(lines[7:], start=7):  # Inizia dalla riga 8
+        for row_idx, row in enumerate(lines[6:], start=6):  # Inizia dalla riga 7
             # Trova l'orario nella colonna B (indice 1)
             ora = None
-            for cell in row[:3]:
-                cell = cell.strip()
-                if cell and ":" in cell:
-                    # Verifica formato orario HH:MM
-                    if regex_module.match(r'^\d{1,2}:\d{2}$', cell):
-                        ora = cell if len(cell) == 5 else f"0{cell}"
-                        break
+            ora_cell = row[1].strip() if len(row) > 1 else ""
+            if ora_cell and ":" in ora_cell:
+                # Verifica formato orario HH:MM
+                if regex_module.match(r'^\d{1,2}:\d{2}$', ora_cell):
+                    ora = ora_cell if len(ora_cell) == 5 else f"0{ora_cell}"
             
             if not ora:
                 continue
@@ -4874,7 +4877,7 @@ async def sync_from_google_sheets(
                             name = name.strip()
                             if name and len(name) > 1:
                                 # Ignora note come "rim picc", "controllo", etc.
-                                if any(kw in name.lower() for kw in ["controllo", "rim ", "non funzionante", "picc port", "idline", "clody im"]):
+                                if any(kw in name.lower() for kw in ["controllo", "rim ", "non funzionante", "picc port", "idline", "clody im", "spatoliatore"]):
                                     continue
                                 
                                 # Estrai cognome (primo elemento)
