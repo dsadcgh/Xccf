@@ -4843,10 +4843,10 @@ async def sync_from_google_sheets(
         # Calcola le date effettive per ogni colonna
         date_for_col = {}
         for col_idx, day_offset in day_for_col.items():
-            target_date = monday_this_week + timedelta(days=day_offset)
+            target_date = monday_ref + timedelta(days=day_offset)
             date_for_col[col_idx] = target_date.strftime("%Y-%m-%d")
         
-        logger.info(f"Date mapping: {date_for_col}")
+        logger.info(f"Date mapping (starting from {monday_ref}): {date_for_col}")
         
         # Ora associa le colonne ai tipi PICC/MED
         # La data si propaga alle colonne successive fino alla prossima data
