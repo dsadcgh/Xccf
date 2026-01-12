@@ -5083,61 +5083,111 @@ async def sync_from_google_sheets(
         logger.error(f"Google Sheets sync error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Errore nella sincronizzazione: {str(e)}")
 
-@api_router.get("/sync/google-sheets/preview")
-async def preview_google_sheets_sync(
-    ambulatorio: Ambulatorio,
-    sheet_id: Optional[str] = None,
-    year: Optional[int] = None,
+@api_router.post("/sync/google-sheets/analyze")
+async def analyze_google_sheets_sync(
+    data: GoogleSheetsSyncPreview,
     payload: dict = Depends(verify_token)
 ):
-    """Anteprima dei dati da Google Sheets senza salvarli"""
-    if ambulatorio.value not in payload["ambulatori"]:
+    """Analizza i dati da Google Sheets e rileva potenziali errori di battitura"""
+    if data.ambulatorio.value not in payload["ambulatori"]:
         raise HTTPException(status_code=403, detail="Non hai accesso a questo ambulatorio")
     
-    sheet_id = sheet_id or GOOGLE_SHEET_ID
-    year = year or datetime.now().year
+    sheet_id = data.sheet_id or GOOGLE_SHEET_ID
+    year = data.year
     
     try:
-        csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+        # Scarica il foglio come XLSX
+        xlsx_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
         
         async with httpx.AsyncClient(follow_redirects=True) as http_client:
-            response = await http_client.get(csv_url, timeout=30.0)
+            response = await http_client.get(xlsx_url, timeout=60.0)
             if response.status_code != 200:
                 raise HTTPException(status_code=400, detail="Impossibile accedere al foglio Google")
         
-        csv_content = response.text
-        lines = list(csv.reader(io.StringIO(csv_content)))
+        wb = load_workbook(io.BytesIO(response.content), data_only=True)
         
-        # Estrai date dalla riga 3
-        dates_row = lines[2] if len(lines) > 2 else []
-        dates_found = []
-        for cell in dates_row:
-            cell = cell.strip()
-            if cell and "/" in cell:
-                try:
-                    parts = cell.split("/")
-                    day = int(parts[0])
-                    month = int(parts[1])
-                    dates_found.append(f"{year}-{month:02d}-{day:02d}")
-                except:
-                    pass
+        # Parse tutti i fogli
+        all_appointments = []
+        all_patients = set()
+        sheets_processed = []
         
-        # Conta righe con dati
-        data_rows = 0
-        for row in lines[4:]:
-            if any(cell.strip() for cell in row):
-                data_rows += 1
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            if ws.max_row < 7 or ws.max_column < 5:
+                continue
+            
+            appointments, patients = parse_sheet_data(ws, year)
+            if appointments:
+                all_appointments.extend(appointments)
+                all_patients.update(patients)
+                sheets_processed.append(sheet_name)
+        
+        # Ottieni nomi esistenti dal database
+        existing_patients = await db.patients.find(
+            {"ambulatorio": data.ambulatorio.value},
+            {"cognome": 1, "nome": 1, "_id": 0}
+        ).to_list(None)
+        existing_names = set(f"{p['cognome']} {p.get('nome', '')}".strip() for p in existing_patients)
+        
+        # Crea set di tutti i nomi nel foglio
+        sheet_names = set(f"{cognome} {nome}".strip() for cognome, nome in all_patients)
+        
+        # Trova potenziali errori di battitura
+        conflicts = []
+        processed_pairs = set()  # Per evitare duplicati
+        
+        # Conta occorrenze e date per ogni nome
+        name_occurrences = {}
+        for apt in all_appointments:
+            full_name = f"{apt['cognome']} {apt['nome']}".strip()
+            if full_name not in name_occurrences:
+                name_occurrences[full_name] = {"count": 0, "dates": set()}
+            name_occurrences[full_name]["count"] += 1
+            name_occurrences[full_name]["dates"].add(apt["date"])
+        
+        for cognome, nome in all_patients:
+            full_name = f"{cognome} {nome}".strip()
+            
+            # Cerca nomi simili
+            similar = find_similar_names(full_name, existing_names, sheet_names)
+            
+            if similar:
+                # Crea una chiave per evitare duplicati (ordina i nomi)
+                conflict_key = tuple(sorted([full_name] + similar))
+                if conflict_key not in processed_pairs:
+                    processed_pairs.add(conflict_key)
+                    
+                    # Raccogli info per tutti i nomi coinvolti
+                    all_involved = [full_name] + similar
+                    conflict_info = {
+                        "names": [],
+                        "is_new": []
+                    }
+                    
+                    for name in all_involved:
+                        occ = name_occurrences.get(name, {"count": 0, "dates": set()})
+                        conflict_info["names"].append({
+                            "name": name,
+                            "occurrences": occ["count"],
+                            "dates": sorted(list(occ["dates"])) if occ["dates"] else [],
+                            "exists_in_db": name in existing_names
+                        })
+                        conflict_info["is_new"].append(name not in existing_names)
+                    
+                    conflicts.append(conflict_info)
         
         return {
             "success": True,
-            "sheet_id": sheet_id,
-            "dates_found": list(set(dates_found)),
-            "data_rows": data_rows,
-            "preview": lines[:10]  # Prime 10 righe come anteprima
+            "sheets_processed": sheets_processed,
+            "total_patients": len(all_patients),
+            "total_appointments": len(all_appointments),
+            "conflicts": conflicts,
+            "has_conflicts": len(conflicts) > 0
         }
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Errore: {str(e)}")
+        logger.error(f"Google Sheets analyze error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Errore nell'analisi: {str(e)}")
 
 # Include the router in the main app
 app.include_router(api_router)
