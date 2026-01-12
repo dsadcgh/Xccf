@@ -127,6 +127,10 @@ export default function AgendaPage() {
   // New patient form state
   const [newPatientNome, setNewPatientNome] = useState("");
   const [newPatientCognome, setNewPatientCognome] = useState("");
+  
+  // Google Sheets sync state
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncDialogOpen, setSyncDialogOpen] = useState(false);
 
   const isVillaGinestre = ambulatorio === "villa_ginestre";
 
