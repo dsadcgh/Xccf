@@ -5185,12 +5185,34 @@ async def sync_from_google_sheets(
         patient_id_map = {}  # {(cognome, nome): patient_id}
         
         for cognome, nome in all_patients:
-            # Cerca paziente esistente
+            # Cerca paziente esistente - PRIMA cerca match esatto, poi per cognome
             query = {"cognome": {"$regex": f"^{cognome}$", "$options": "i"}, "ambulatorio": data.ambulatorio.value}
             if nome:
                 query["nome"] = {"$regex": f"^{nome}$", "$options": "i"}
             
             existing = await db.patients.find_one(query, {"_id": 0})
+            
+            # Se non trovato con match esatto e manca il nome, cerca solo per cognome
+            if not existing and not nome:
+                # Cerca qualsiasi paziente con lo stesso cognome
+                cognome_query = {
+                    "cognome": {"$regex": f"^{cognome}$", "$options": "i"}, 
+                    "ambulatorio": data.ambulatorio.value
+                }
+                existing = await db.patients.find_one(cognome_query, {"_id": 0})
+                if existing:
+                    logger.info(f"Trovato paziente esistente per cognome: {cognome} -> {existing['cognome']} {existing.get('nome', '')}")
+            
+            if existing:
+                patient_id_map[(cognome, nome)] = existing["id"]
+                # Aggiorna anche le info negli appuntamenti per usare il nome corretto
+                if existing.get('nome') and not nome:
+                    # Se il paziente esistente ha un nome ma quello dal foglio no, usa il nome esistente
+                    for apt in all_appointments:
+                        if apt["cognome"].lower() == cognome.lower() and apt["nome"] == "":
+                            apt["cognome"] = existing["cognome"]
+                            apt["nome"] = existing.get("nome", "")
+                            logger.info(f"Aggiornato nome appuntamento: {cognome} -> {existing['cognome']} {existing.get('nome', '')}")
             
             if existing:
                 patient_id_map[(cognome, nome)] = existing["id"]
