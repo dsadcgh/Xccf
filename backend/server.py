@@ -4896,7 +4896,7 @@ def calculate_similarity(name1: str, name2: str) -> float:
     
     return weighted_score
 
-def find_similar_names(name: str, existing_names: set, all_names: set, threshold: int = SIMILARITY_THRESHOLD) -> List[tuple]:
+def find_similar_names(name: str, existing_names: set, all_names: set, threshold: int = SIMILARITY_THRESHOLD, name_occurrences: dict = None) -> List[tuple]:
     """Trova nomi simili usando fuzzy matching avanzato. Ritorna lista di (nome, similarità)"""
     similar = []
     
@@ -4908,6 +4908,10 @@ def find_similar_names(name: str, existing_names: set, all_names: set, threshold
     for existing in existing_names:
         if name.lower() != existing.lower():
             similarity = calculate_similarity(name, existing)
+            
+            # Se similarità è 0 (inizio cognome troppo diverso), salta
+            if similarity == 0:
+                continue
             
             # Controllo speciale: stesso cognome = sempre includere
             existing_parts = normalize_name(existing).split()
@@ -4924,6 +4928,11 @@ def find_similar_names(name: str, existing_names: set, all_names: set, threshold
             # Evita duplicati
             if not any(s[0].lower() == other.lower() for s in similar):
                 similarity = calculate_similarity(name, other)
+                
+                # Se similarità è 0 (inizio cognome troppo diverso), salta
+                if similarity == 0:
+                    continue
+                
                 if similarity >= threshold:
                     similar.append((other, similarity, "foglio"))
     
