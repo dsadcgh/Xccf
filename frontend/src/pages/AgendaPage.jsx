@@ -1717,15 +1717,19 @@ export default function AgendaPage() {
                             type="button"
                             variant="outline"
                             size="sm"
+                            className="text-green-600 border-green-300 hover:bg-green-50"
                             onClick={() => {
-                              // Seleziona solo il primo (quello esistente o con più occorrenze)
+                              // Seleziona il paziente suggerito (priorità a quelli già nel sistema)
+                              const suggested = conflict.suggested || 
+                                conflict.options.find(o => o.exists_in_db)?.name || 
+                                conflict.options[0]?.name;
                               setSyncConflictChoices(prev => ({
                                 ...prev,
-                                [conflict.id]: [conflict.options[0]?.name].filter(Boolean)
+                                [conflict.id]: [suggested].filter(Boolean)
                               }));
                             }}
                           >
-                            Solo consigliato
+                            ⭐ Consigliato
                           </Button>
                           
                           <Button
