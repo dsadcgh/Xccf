@@ -5031,10 +5031,16 @@ async def sync_from_google_sheets(
             if response.status_code != 200:
                 raise HTTPException(status_code=400, detail=f"Impossibile accedere al foglio Google (status {response.status_code}). Verifica che sia pubblico.")
         
-        # Carica il workbook Excel (data_only=True per valutare le formule)
-        wb = load_workbook(io.BytesIO(response.content), data_only=True)
+        xlsx_content = io.BytesIO(response.content)
         
-        # Cancella appuntamenti esistenti se richiesto
+        # Carica il workbook due volte:
+        # 1. Con data_only=True per valutare le formule
+        # 2. Senza data_only per leggere i colori
+        wb_data = load_workbook(io.BytesIO(response.content), data_only=True)
+        wb_colors = load_workbook(io.BytesIO(response.content), data_only=False)
+        
+        # NON cancellare gli appuntamenti manuali!
+        # Cancella solo gli appuntamenti importati da Google Sheets
         if data.clear_existing:
             await db.appointments.delete_many({
                 "ambulatorio": data.ambulatorio.value,
@@ -5046,13 +5052,15 @@ async def sync_from_google_sheets(
         all_patients = set()
         sheets_processed = []
         
-        for sheet_name in wb.sheetnames:
-            ws = wb[sheet_name]
+        for sheet_name in wb_data.sheetnames:
+            ws_data = wb_data[sheet_name]
+            ws_colors = wb_colors[sheet_name] if sheet_name in wb_colors.sheetnames else None
+            
             # Salta fogli vuoti o con pochi dati
-            if ws.max_row < 7 or ws.max_column < 5:
+            if ws_data.max_row < 7 or ws_data.max_column < 5:
                 continue
             
-            appointments, patients = parse_sheet_data(ws, year)
+            appointments, patients = parse_sheet_data(ws_data, year, ws_colors)
             if appointments:
                 all_appointments.extend(appointments)
                 all_patients.update(patients)
