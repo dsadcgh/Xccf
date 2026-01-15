@@ -1676,48 +1676,6 @@ export default function AgendaPage() {
                             Seleziona tutti
                           </Button>
                           
-                          {/* Pulsante Seleziona tutti MED - solo se ci sono opzioni MED */}
-                          {conflict.options.some(o => o.tipos?.includes("MED")) && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="text-purple-600 border-purple-300 hover:bg-purple-50"
-                              onClick={() => {
-                                const medNames = conflict.options
-                                  .filter(o => o.tipos?.includes("MED"))
-                                  .map(o => o.name);
-                                setSyncConflictChoices(prev => ({
-                                  ...prev,
-                                  [conflict.id]: medNames
-                                }));
-                              }}
-                            >
-                              Solo MED
-                            </Button>
-                          )}
-                          
-                          {/* Pulsante Seleziona tutti PICC - solo se ci sono opzioni PICC */}
-                          {conflict.options.some(o => o.tipos?.includes("PICC")) && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="text-blue-600 border-blue-300 hover:bg-blue-50"
-                              onClick={() => {
-                                const piccNames = conflict.options
-                                  .filter(o => o.tipos?.includes("PICC"))
-                                  .map(o => o.name);
-                                setSyncConflictChoices(prev => ({
-                                  ...prev,
-                                  [conflict.id]: piccNames
-                                }));
-                              }}
-                            >
-                              Solo PICC
-                            </Button>
-                          )}
-                          
                           <Button
                             type="button"
                             variant="outline"
