@@ -1575,6 +1575,11 @@ export default function AgendaPage() {
                                       dal foglio
                                     </span>
                                   )}
+                                  {isNamePendingIgnore(option.name) && (
+                                    <span className="px-2 py-0.5 bg-orange-500 text-white text-xs rounded-full font-medium">
+                                      🚫 VERRÀ IGNORATO
+                                    </span>
+                                  )}
                                   <span className="text-xs text-gray-500">
                                     ({option.similarity}% simile)
                                   </span>
@@ -1591,20 +1596,33 @@ export default function AgendaPage() {
                                   )}
                                 </div>
                               </div>
-                              {/* Pulsante Non chiedere più */}
+                              {/* Pulsante Toggle Non chiedere più */}
                               <Button
                                 type="button"
-                                variant="ghost"
+                                variant={isNamePendingIgnore(option.name) ? "default" : "ghost"}
                                 size="sm"
-                                className="ml-2 text-xs text-orange-600 hover:text-orange-700 hover:bg-orange-50 shrink-0"
+                                className={`ml-2 text-xs shrink-0 ${
+                                  isNamePendingIgnore(option.name) 
+                                    ? "bg-orange-500 hover:bg-orange-600 text-white" 
+                                    : "text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                                }`}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleIgnoreName(option.name, option.dates, conflict.id);
+                                  handleToggleIgnoreName(option.name, option.dates);
                                 }}
-                                title="Non mostrare più questo nome nei conflitti"
+                                title={isNamePendingIgnore(option.name) ? "Clicca per riabilitare" : "Non mostrare più questo nome nei conflitti"}
                               >
-                                <Ban className="w-3 h-3 mr-1" />
-                                Non chiedere più
+                                {isNamePendingIgnore(option.name) ? (
+                                  <>
+                                    <RotateCcw className="w-3 h-3 mr-1" />
+                                    Riabilita
+                                  </>
+                                ) : (
+                                  <>
+                                    <Ban className="w-3 h-3 mr-1" />
+                                    Non chiedere più
+                                  </>
+                                )}
                               </Button>
                             </div>
                           );
