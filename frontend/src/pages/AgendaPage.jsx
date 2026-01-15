@@ -836,6 +836,16 @@ export default function AgendaPage() {
             <FileSpreadsheet className="w-4 h-4 mr-2" />
             Sincronizza Sheets
           </Button>
+          <Button
+            variant="outline" 
+            size="sm" 
+            onClick={openIgnoredNamesDialog}
+            className="ml-2 text-orange-600 border-orange-300 hover:bg-orange-50"
+            data-testid="ignored-names-btn"
+          >
+            <Database className="w-4 h-4 mr-2" />
+            Database Scelte
+          </Button>
         </div>
       </div>
 
