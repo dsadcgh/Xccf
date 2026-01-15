@@ -5248,7 +5248,7 @@ async def sync_from_google_sheets(
                 "data": apt["date"],
                 "ora": apt["ora"],
                 "tipo": apt["tipo"],
-                "prestazioni": ["medicazione_semplice"] if apt["tipo"] == "MED" else ["medicazione_semplice", "irrigazione_catetere"],
+                "prestazioni": ["medicazione_semplice", "fasciatura_semplice"] if apt["tipo"] == "MED" else ["medicazione_semplice", "irrigazione_catetere"],
                 "note": "Importato da Google Sheets",
                 "stato": stato,
                 "completed": False,
