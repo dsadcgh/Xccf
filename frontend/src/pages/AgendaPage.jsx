@@ -1052,6 +1052,7 @@ export default function AgendaPage() {
             {/* Stato */}
             <div className="space-y-2">
               <Label>Stato Appuntamento</Label>
+              <p className="text-xs text-gray-500 mb-1">Clicca di nuovo sullo stesso stato per resettare</p>
               <div className="flex gap-2">
                 <Button
                   variant={editingAppointment?.stato === "effettuato" ? "default" : "outline"}
@@ -1059,7 +1060,7 @@ export default function AgendaPage() {
                   onClick={() => handleChangeStato("effettuato")}
                   className={`flex-1 ${editingAppointment?.stato === "effettuato" ? "bg-green-600 hover:bg-green-700" : "hover:bg-green-50 hover:text-green-700 hover:border-green-300"}`}
                 >
-                  ✓ Effettuato
+                  ✓ Effettuato {editingAppointment?.stato === "effettuato" && "(clicca per resettare)"}
                 </Button>
                 <Button
                   variant={editingAppointment?.stato === "non_presentato" ? "destructive" : "outline"}
@@ -1067,7 +1068,7 @@ export default function AgendaPage() {
                   onClick={() => handleChangeStato("non_presentato")}
                   className={`flex-1 ${editingAppointment?.stato !== "non_presentato" ? "hover:bg-red-50 hover:text-red-700 hover:border-red-300" : ""}`}
                 >
-                  ✗ Non Presentato
+                  ✗ Non Presentato {editingAppointment?.stato === "non_presentato" && "(clicca per resettare)"}
                 </Button>
               </div>
             </div>
