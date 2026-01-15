@@ -212,14 +212,15 @@ export default function AgendaPage() {
             return;
           }
           
-          // Il primo nome selezionato è il "principale"
-          const primaryName = chosenNames[0];
-          if (!primaryName) return;
-          
-          // Mappa i nomi NON selezionati al nome principale
+          // Mappa i nomi NON selezionati usando le associazioni specifiche o il primo selezionato
           conflict.options.forEach(option => {
             if (!chosenNames.includes(option.name)) {
-              nameCorrections[option.name] = primaryName;
+              // Usa l'associazione specifica se definita, altrimenti il primo selezionato
+              const associationKey = `${conflict.id}_${option.name}`;
+              const targetName = nameAssociations[associationKey] || chosenNames[0];
+              if (targetName) {
+                nameCorrections[option.name] = targetName;
+              }
             }
           });
         });
