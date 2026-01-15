@@ -5213,20 +5213,58 @@ async def sync_from_google_sheets(
                 if existing:
                     logger.info(f"Trovato paziente esistente per cognome: {cognome} -> {existing['cognome']} {existing.get('nome', '')}")
             
+            # Se non trovato e c'è un nome, prova a cercare senza il nome (solo cognome)
+            # per catturare casi come "Lo Mantia" nel foglio ma "La Mantia" nel DB
+            if not existing and nome:
+                cognome_only_query = {
+                    "cognome": {"$regex": f"^{cognome}$", "$options": "i"},
+                    "ambulatorio": data.ambulatorio.value
+                }
+                existing = await db.patients.find_one(cognome_only_query, {"_id": 0})
+                if existing:
+                    logger.info(f"Trovato paziente esistente per cognome (nome ignorato): {cognome} {nome} -> {existing['cognome']} {existing.get('nome', '')}")
+            
             if existing:
                 patient_id_map[(cognome, nome)] = existing["id"]
-                # Aggiorna anche le info negli appuntamenti per usare il nome corretto
-                if existing.get('nome') and not nome:
+                
+                # IMPORTANTE: Se il paziente è stato modificato manualmente, NON aggiornare il suo nome
+                # Usa sempre i dati del paziente esistente per gli appuntamenti
+                if existing.get('manually_modified'):
+                    logger.info(f"Paziente {existing['cognome']} {existing.get('nome', '')} modificato manualmente - NON sovrascrivere")
+                    # Aggiorna gli appuntamenti per usare il nome corretto dal DB
+                    for apt in all_appointments:
+                        if apt["cognome"].lower() == cognome.lower():
+                            if apt["nome"].lower() == nome.lower() or apt["nome"] == "":
+                                apt["cognome"] = existing["cognome"]
+                                apt["nome"] = existing.get("nome", "")
+                                logger.info(f"Appuntamento aggiornato con dati paziente manuale: {existing['cognome']} {existing.get('nome', '')}")
+                elif existing.get('nome') and not nome:
                     # Se il paziente esistente ha un nome ma quello dal foglio no, usa il nome esistente
                     for apt in all_appointments:
                         if apt["cognome"].lower() == cognome.lower() and apt["nome"] == "":
                             apt["cognome"] = existing["cognome"]
                             apt["nome"] = existing.get("nome", "")
                             logger.info(f"Aggiornato nome appuntamento: {cognome} -> {existing['cognome']} {existing.get('nome', '')}")
-            
-            if existing:
-                patient_id_map[(cognome, nome)] = existing["id"]
             else:
+                # Crea nuovo paziente - ma prima verifica che non ci sia già uno simile modificato manualmente
+                similar_query = {
+                    "cognome": {"$regex": f"^{cognome[:3]}", "$options": "i"},
+                    "ambulatorio": data.ambulatorio.value,
+                    "manually_modified": True
+                }
+                similar_manual = await db.patients.find_one(similar_query, {"_id": 0})
+                
+                if similar_manual:
+                    # C'è un paziente simile modificato manualmente - usa quello
+                    patient_id_map[(cognome, nome)] = similar_manual["id"]
+                    logger.info(f"Trovato paziente manuale simile: {cognome} {nome} -> {similar_manual['cognome']} {similar_manual.get('nome', '')}")
+                    # Aggiorna gli appuntamenti
+                    for apt in all_appointments:
+                        if apt["cognome"].lower() == cognome.lower() and apt["nome"].lower() == (nome or "").lower():
+                            apt["cognome"] = similar_manual["cognome"]
+                            apt["nome"] = similar_manual.get("nome", "")
+                    continue
+                
                 # Crea nuovo paziente
                 new_patient_id = str(uuid.uuid4())
                 codice_paziente = generate_patient_code(nome or "X", cognome)
@@ -5256,6 +5294,7 @@ async def sync_from_google_sheets(
                     "status": "in_cura",
                     "scheda_med_counter": 0,
                     "lesion_markers": [],
+                    "imported_from_sheets": True,  # Flag per indicare origine
                     "created_at": datetime.now(timezone.utc).isoformat(),
                     "updated_at": datetime.now(timezone.utc).isoformat()
                 }
