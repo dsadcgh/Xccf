@@ -980,6 +980,15 @@ async def update_appointment(appointment_id: str, data: dict, payload: dict = De
     if appointment["ambulatorio"] not in payload["ambulatori"]:
         raise HTTPException(status_code=403, detail="Non hai accesso a questo ambulatorio")
     
+    # Se l'appuntamento era importato da Google Sheets e viene modificato,
+    # segnalo come "modificato manualmente" per preservare le modifiche durante la sincronizzazione
+    if appointment.get("note") == "Importato da Google Sheets":
+        # Controlla se ci sono modifiche significative (prestazioni, stato, note)
+        significant_changes = any(key in data for key in ['prestazioni', 'stato', 'note', 'ora', 'data', 'tipo'])
+        if significant_changes:
+            data["manually_modified"] = True
+            data["modified_at"] = datetime.now(timezone.utc).isoformat()
+    
     await db.appointments.update_one({"id": appointment_id}, {"$set": data})
     updated = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
     return updated
