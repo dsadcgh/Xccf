@@ -1385,13 +1385,29 @@ export default function AgendaPage() {
               <ScrollArea className="max-h-[50vh] pr-4">
                 <div className="space-y-4 py-2">
                   {syncConflicts.map((conflict, idx) => (
-                    <div key={conflict.id} className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                    <div key={conflict.id} className={`p-4 rounded-lg border ${
+                      conflict.has_existing_patient 
+                        ? "bg-green-50 border-green-200" 
+                        : "bg-amber-50 border-amber-200"
+                    }`}>
                       <div className="flex items-center gap-2 mb-3">
-                        <AlertTriangle className="w-5 h-5 text-amber-600" />
-                        <span className="font-medium text-amber-800">
+                        {conflict.has_existing_patient ? (
+                          <UserCheck className="w-5 h-5 text-green-600" />
+                        ) : (
+                          <AlertTriangle className="w-5 h-5 text-amber-600" />
+                        )}
+                        <span className={`font-medium ${
+                          conflict.has_existing_patient ? "text-green-800" : "text-amber-800"
+                        }`}>
                           Conflitto #{idx + 1}: {conflict.reason}
                         </span>
                       </div>
+                      
+                      {conflict.has_existing_patient && (
+                        <p className="text-sm text-green-700 mb-3 bg-green-100 p-2 rounded">
+                          ⭐ Consigliato: usa il paziente già presente nel sistema
+                        </p>
+                      )}
                       
                       <RadioGroup 
                         value={syncConflictChoices[conflict.id] || ""} 
@@ -1402,14 +1418,20 @@ export default function AgendaPage() {
                         className="space-y-2"
                       >
                         {conflict.options.map((option, optIdx) => (
-                          <div key={optIdx} className="flex items-start space-x-3 p-2 rounded hover:bg-amber-100 transition-colors">
+                          <div key={optIdx} className={`flex items-start space-x-3 p-2 rounded transition-colors ${
+                            option.exists_in_db 
+                              ? "bg-green-100 border border-green-300 hover:bg-green-150" 
+                              : "hover:bg-amber-100"
+                          }`}>
                             <RadioGroupItem value={option.name} id={`${conflict.id}-${optIdx}`} className="mt-1" />
                             <Label htmlFor={`${conflict.id}-${optIdx}`} className="flex-1 cursor-pointer">
-                              <div className="flex items-center gap-2">
-                                <span className="font-semibold text-gray-900">{option.name}</span>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className={`font-semibold ${option.exists_in_db ? "text-green-900" : "text-gray-900"}`}>
+                                  {option.name}
+                                </span>
                                 {option.exists_in_db && (
-                                  <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
-                                    già nel sistema
+                                  <span className="px-2 py-0.5 bg-green-600 text-white text-xs rounded-full font-medium">
+                                    ✓ GIÀ NEL SISTEMA
                                   </span>
                                 )}
                                 {option.source === "foglio" && !option.exists_in_db && (
@@ -1423,7 +1445,7 @@ export default function AgendaPage() {
                               </div>
                               <div className="text-xs text-gray-500 mt-1">
                                 {option.occurrences > 0 && (
-                                  <span>{option.occurrences} appuntamenti • </span>
+                                  <span>{option.occurrences} appuntamenti nel foglio • </span>
                                 )}
                                 {option.dates.length > 0 && (
                                   <span>Date: {option.dates.slice(0, 3).join(", ")}{option.dates.length > 3 ? "..." : ""}</span>
@@ -1437,14 +1459,14 @@ export default function AgendaPage() {
                         ))}
                         
                         {/* Opzione per tenere tutti */}
-                        <div className="flex items-start space-x-3 p-2 rounded hover:bg-gray-100 transition-colors border-t border-amber-200 mt-2 pt-3">
+                        <div className="flex items-start space-x-3 p-2 rounded hover:bg-gray-100 transition-colors border-t border-gray-200 mt-2 pt-3">
                           <RadioGroupItem value="KEEP_ALL" id={`${conflict.id}-keep-all`} className="mt-1" />
                           <Label htmlFor={`${conflict.id}-keep-all`} className="flex-1 cursor-pointer">
                             <div className="flex items-center gap-2">
-                              <span className="font-medium text-gray-700">Tieni entrambi come pazienti separati</span>
+                              <span className="font-medium text-gray-700">Tieni tutti come pazienti separati</span>
                             </div>
                             <div className="text-xs text-gray-500 mt-1">
-                              Crea pazienti distinti per ogni nome (non sono la stessa persona)
+                              Crea pazienti distinti per ogni nome (sono persone diverse)
                             </div>
                           </Label>
                         </div>
