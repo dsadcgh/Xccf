@@ -302,6 +302,38 @@ export default function AgendaPage() {
     });
   };
 
+  // Carica i nomi ignorati dal database
+  const loadIgnoredNames = async () => {
+    setLoadingIgnoredNames(true);
+    try {
+      const response = await apiClient.get(`/sync/ignored-names/${ambulatorio}`);
+      setIgnoredNamesList(response.data.ignored_names || []);
+    } catch (error) {
+      console.error("Error loading ignored names:", error);
+      toast.error("Errore nel caricamento delle scelte salvate");
+    } finally {
+      setLoadingIgnoredNames(false);
+    }
+  };
+
+  // Rimuove un nome dalla lista degli ignorati (lo riabilita)
+  const handleRestoreIgnoredName = async (ignoredId, name) => {
+    try {
+      await apiClient.delete(`/sync/ignored-names/${ignoredId}`);
+      setIgnoredNamesList(prev => prev.filter(item => item.id !== ignoredId));
+      toast.success(`"${name}" tornerà nelle scelte della sincronizzazione`);
+    } catch (error) {
+      console.error("Error restoring name:", error);
+      toast.error("Errore nel ripristino del nome");
+    }
+  };
+
+  // Apre il dialog del database scelte
+  const openIgnoredNamesDialog = () => {
+    setIgnoredNamesDialogOpen(true);
+    loadIgnoredNames();
+  };
+
   // Naviga alla cartella clinica del paziente
   const goToPatientFolder = (patientId) => {
     navigate(`/pazienti/${patientId}`);
