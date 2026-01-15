@@ -244,45 +244,40 @@ export default function AgendaPage() {
     }
   };
 
-  // Funzione per ignorare un nome nelle sincronizzazioni future
-  const handleIgnoreName = async (name, dates, conflictId) => {
-    try {
-      await apiClient.post("/sync/ignored-names", {
-        ambulatorio,
-        name,
-        dates: dates || []
-      });
-      
-      toast.success(`"${name}" non verrà più mostrato nei conflitti`);
-      
-      // Rimuovi questo nome dal conflitto corrente
-      setSyncConflicts(prev => {
-        return prev.map(conflict => {
-          if (conflict.id === conflictId) {
-            const newOptions = conflict.options.filter(opt => opt.name !== name);
-            // Se rimane solo 1 opzione, rimuovi l'intero conflitto
-            if (newOptions.length <= 1) {
-              return null;
-            }
-            return { ...conflict, options: newOptions };
+  // Funzione per segnare un nome come "non chiedere più" (salvato solo dopo conferma sync)
+  const handleIgnoreName = (name, dates, conflictId) => {
+    // Aggiungi alla lista pending (non salva ancora nel DB)
+    setPendingIgnoredNames(prev => {
+      // Evita duplicati
+      if (prev.some(p => p.name === name)) return prev;
+      return [...prev, { name, dates: dates || [] }];
+    });
+    
+    toast.success(`"${name}" verrà ignorato dopo la conferma`);
+    
+    // Rimuovi questo nome dal conflitto corrente (solo visivamente)
+    setSyncConflicts(prev => {
+      return prev.map(conflict => {
+        if (conflict.id === conflictId) {
+          const newOptions = conflict.options.filter(opt => opt.name !== name);
+          // Se rimane solo 1 opzione, rimuovi l'intero conflitto
+          if (newOptions.length <= 1) {
+            return null;
           }
-          return conflict;
-        }).filter(Boolean);
-      });
-      
-      // Aggiorna anche le scelte
-      setSyncConflictChoices(prev => {
-        const current = prev[conflictId] || [];
-        return {
-          ...prev,
-          [conflictId]: current.filter(n => n !== name)
-        };
-      });
-      
-    } catch (error) {
-      console.error("Error ignoring name:", error);
-      toast.error("Errore nel salvare la preferenza");
-    }
+          return { ...conflict, options: newOptions };
+        }
+        return conflict;
+      }).filter(Boolean);
+    });
+    
+    // Aggiorna anche le scelte
+    setSyncConflictChoices(prev => {
+      const current = prev[conflictId] || [];
+      return {
+        ...prev,
+        [conflictId]: current.filter(n => n !== name)
+      };
+    });
   };
 
   // Naviga alla cartella clinica del paziente
