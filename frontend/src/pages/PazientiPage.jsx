@@ -43,8 +43,21 @@ import {
   Square,
   ListChecks,
   X,
+  Pencil,
+  RotateCcw,
+  Calendar,
+  FileText,
+  Hash,
 } from "lucide-react";
 import { toast } from "sonner";
+
+// Prestazioni MED disponibili
+const PRESTAZIONI_MED = [
+  { value: "medicazione_semplice", label: "Medicazione semplice" },
+  { value: "fasciatura_semplice", label: "Fasciatura semplice" },
+  { value: "iniezione_terapeutica", label: "Iniezione terapeutica" },
+  { value: "catetere_vescicale", label: "Catetere vescicale" },
+];
 
 const PATIENT_TYPES = [
   { value: "PICC", label: "PICC", color: "bg-emerald-100 text-emerald-700" },
