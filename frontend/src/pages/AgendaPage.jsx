@@ -224,17 +224,34 @@ export default function AgendaPage() {
       });
       
       if (response.data.success) {
+        // Salva i nomi "non chiedere più" nel database SOLO dopo conferma
+        if (pendingIgnoredNames.length > 0) {
+          try {
+            for (const ignored of pendingIgnoredNames) {
+              await apiClient.post("/sync/ignored-names", {
+                ambulatorio,
+                name: ignored.name,
+                dates: ignored.dates
+              });
+            }
+            console.log(`Salvati ${pendingIgnoredNames.length} nomi ignorati`);
+          } catch (err) {
+            console.error("Errore nel salvare nomi ignorati:", err);
+          }
+        }
+        
         toast.success(
           `Sincronizzazione completata!\n` +
           `${response.data.created_patients} nuovi pazienti\n` +
           `${response.data.created_appointments} nuovi appuntamenti`
         );
-        // Ricarica i dati
+        // Ricarica i dati e resetta tutto
         fetchData();
         setSyncDialogOpen(false);
         setSyncStep("initial");
         setSyncConflicts([]);
         setSyncConflictChoices({});
+        setPendingIgnoredNames([]); // Reset nomi pending
       }
     } catch (error) {
       console.error("Sync error:", error);
