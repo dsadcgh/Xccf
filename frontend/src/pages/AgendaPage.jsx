@@ -1567,6 +1567,11 @@ export default function AgendaPage() {
                                   <span className={`font-semibold ${option.exists_in_db ? "text-green-900" : "text-gray-900"}`}>
                                     {option.name}
                                   </span>
+                                  {option.name === conflict.suggested && (
+                                    <span className="px-2 py-0.5 bg-yellow-500 text-white text-xs rounded-full font-medium">
+                                      ⭐ CONSIGLIATO
+                                    </span>
+                                  )}
                                   {option.exists_in_db && (
                                     <span className="px-2 py-0.5 bg-green-600 text-white text-xs rounded-full font-medium">
                                       ✓ GIÀ NEL SISTEMA
