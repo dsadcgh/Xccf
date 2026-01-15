@@ -608,6 +608,13 @@ async def update_patient(patient_id: str, data: PatientUpdate, payload: dict = D
     update_data = {k: v for k, v in data.model_dump().items() if v is not None}
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
     
+    # Se viene modificato nome o cognome, segnala come modificato manualmente
+    # Così la sincronizzazione NON sovrascriverà le modifiche
+    if "nome" in update_data or "cognome" in update_data:
+        update_data["manually_modified"] = True
+        update_data["manually_modified_at"] = datetime.now(timezone.utc).isoformat()
+        logger.info(f"Paziente {patient_id} marcato come modificato manualmente (nome/cognome)")
+    
     await db.patients.update_one({"id": patient_id}, {"$set": update_data})
     updated = await db.patients.find_one({"id": patient_id}, {"_id": 0})
     return updated
