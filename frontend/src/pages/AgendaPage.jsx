@@ -1715,6 +1715,78 @@ export default function AgendaPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Dialog Database Scelte (nomi ignorati) */}
+      <Dialog open={ignoredNamesDialogOpen} onOpenChange={setIgnoredNamesDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Database className="w-5 h-5 text-orange-600" />
+              Database Scelte
+            </DialogTitle>
+            <DialogDescription>
+              Nomi che non verranno più mostrati nei conflitti durante la sincronizzazione.
+              Clicca su "Riabilita" per farli riapparire.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4">
+            {loadingIgnoredNames ? (
+              <div className="text-center py-8">
+                <RefreshCw className="w-8 h-8 mx-auto text-gray-400 animate-spin mb-2" />
+                <p className="text-gray-500">Caricamento...</p>
+              </div>
+            ) : ignoredNamesList.length === 0 ? (
+              <div className="text-center py-8 bg-gray-50 rounded-lg">
+                <Ban className="w-12 h-12 mx-auto text-gray-300 mb-2" />
+                <p className="text-gray-500">Nessun nome ignorato</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  I nomi su cui clicchi "Non chiedere più" durante la sincronizzazione appariranno qui
+                </p>
+              </div>
+            ) : (
+              <ScrollArea className="max-h-[400px]">
+                <div className="space-y-2">
+                  {ignoredNamesList.map((item) => (
+                    <div 
+                      key={item.id} 
+                      className="flex items-center justify-between p-3 bg-orange-50 border border-orange-200 rounded-lg"
+                    >
+                      <div className="flex-1">
+                        <p className="font-medium text-gray-900">{item.name}</p>
+                        <p className="text-xs text-gray-500">
+                          Ignorato il {new Date(item.ignored_at).toLocaleDateString('it-IT')}
+                          {item.ignored_by && ` da ${item.ignored_by}`}
+                        </p>
+                        {item.dates?.length > 0 && (
+                          <p className="text-xs text-gray-400 mt-1">
+                            Date nel foglio: {item.dates.slice(0, 3).join(", ")}{item.dates.length > 3 ? "..." : ""}
+                          </p>
+                        )}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="ml-2 text-green-600 border-green-300 hover:bg-green-50"
+                        onClick={() => handleRestoreIgnoredName(item.id, item.name)}
+                      >
+                        <RotateCcw className="w-4 h-4 mr-1" />
+                        Riabilita
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
+          </div>
+
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={() => setIgnoredNamesDialogOpen(false)}>
+              Chiudi
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
