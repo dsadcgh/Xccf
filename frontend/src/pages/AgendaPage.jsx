@@ -1772,15 +1772,15 @@ export default function AgendaPage() {
                 </p>
               </div>
             ) : (
-              <ScrollArea className="max-h-[400px]">
-                <div className="space-y-2">
+              <div className="max-h-[400px] overflow-y-auto border rounded-lg">
+                <div className="space-y-2 p-2">
                   {ignoredNamesList.map((item) => (
                     <div 
                       key={item.id} 
                       className="flex items-center justify-between p-3 bg-orange-50 border border-orange-200 rounded-lg"
                     >
-                      <div className="flex-1">
-                        <p className="font-medium text-gray-900">{item.name}</p>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-900 truncate">{item.name}</p>
                         <p className="text-xs text-gray-500">
                           Ignorato il {new Date(item.ignored_at).toLocaleDateString('it-IT')}
                           {item.ignored_by && ` da ${item.ignored_by}`}
@@ -1794,7 +1794,7 @@ export default function AgendaPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        className="ml-2 text-green-600 border-green-300 hover:bg-green-50"
+                        className="ml-2 text-green-600 border-green-300 hover:bg-green-50 shrink-0"
                         onClick={() => handleRestoreIgnoredName(item.id, item.name)}
                       >
                         <RotateCcw className="w-4 h-4 mr-1" />
@@ -1803,7 +1803,7 @@ export default function AgendaPage() {
                     </div>
                   ))}
                 </div>
-              </ScrollArea>
+              </div>
             )}
           </div>
 
