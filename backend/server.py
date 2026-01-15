@@ -164,10 +164,6 @@ class Patient(BaseModel):
     discharge_notes: Optional[str] = None
     suspend_notes: Optional[str] = None
     scheda_med_counter: int = 0  # Counter for MED schede
-    # Campi per ricetta MED
-    ricetta_med: Optional[List[str]] = None  # Prestazioni selezionate (default: medicazione_semplice, fasciatura_semplice)
-    quantita_med: Optional[int] = None  # Numero volte in agenda (max 24)
-    data_inizio_med: Optional[str] = None  # Data inizio conteggio (YYYY-MM-DD)
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
