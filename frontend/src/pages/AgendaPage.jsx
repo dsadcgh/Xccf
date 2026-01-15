@@ -141,6 +141,7 @@ export default function AgendaPage() {
   const [syncConflictChoices, setSyncConflictChoices] = useState({});
   const [syncStep, setSyncStep] = useState("initial"); // initial, conflicts, syncing
   const [pendingIgnoredNames, setPendingIgnoredNames] = useState([]); // Nomi da ignorare (salvati solo dopo conferma)
+  const [nameAssociations, setNameAssociations] = useState({}); // Associazioni: nome_errato -> nome_corretto
   
   // Database scelte (nomi ignorati)
   const [ignoredNamesDialogOpen, setIgnoredNamesDialogOpen] = useState(false);
