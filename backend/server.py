@@ -5337,6 +5337,12 @@ async def analyze_google_sheets_sync(
             name_occurrences[full_name]["dates"].add(apt["date"])
             name_occurrences[full_name]["tipo"].add(apt["tipo"])
         
+        # Ottieni nomi ignorati per questo ambulatorio
+        ignored_names_docs = await db.ignored_sync_names.find(
+            {"ambulatorio": data.ambulatorio.value}
+        ).to_list(None)
+        ignored_names = set(doc["name"] for doc in ignored_names_docs)
+        
         # Trova potenziali errori di battitura
         conflicts = []
         processed_names = set()  # Per evitare duplicati
@@ -5347,8 +5353,16 @@ async def analyze_google_sheets_sync(
             if full_name in processed_names:
                 continue
             
+            # Salta i nomi ignorati
+            if full_name in ignored_names:
+                processed_names.add(full_name)
+                continue
+            
             # Cerca nomi simili
             similar_results = find_similar_names(full_name, existing_names, sheet_names)
+            
+            # Filtra i nomi simili ignorati
+            similar_results = [(n, s, src) for n, s, src in similar_results if n not in ignored_names]
             
             if similar_results:
                 # Marca tutti i nomi coinvolti come processati
