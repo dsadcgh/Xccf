@@ -5177,14 +5177,18 @@ async def sync_from_google_sheets(
             })
             
             if existing_apt:
-                # Se l'appuntamento esistente è manuale (non da Google Sheets), aggiorna solo lo stato
-                if existing_apt.get("note") != "Importato da Google Sheets":
-                    # Aggiorna solo se l'appuntamento dal foglio indica "non presentato"
-                    if apt.get("not_presented"):
+                # Se l'appuntamento esistente è manuale (non da Google Sheets) O è stato modificato manualmente,
+                # NON sovrascrivere - preserva tutte le modifiche manuali
+                if existing_apt.get("note") != "Importato da Google Sheets" or existing_apt.get("manually_modified"):
+                    # Aggiorna solo lo stato "non presentato" se indicato dal foglio e non già impostato manualmente
+                    if apt.get("not_presented") and existing_apt.get("stato") == "da_fare":
                         await db.appointments.update_one(
                             {"id": existing_apt["id"]},
                             {"$set": {"stato": "non_presentato"}}
                         )
+                    skipped_appointments += 1
+                    continue
+                # Appuntamento importato da Google Sheets non modificato - salta senza modifiche
                 skipped_appointments += 1
                 continue
             
