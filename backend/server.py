@@ -4860,10 +4860,38 @@ def find_similar_names(name: str, existing_names: set, all_names: set, threshold
     
     return similar
 
-def parse_sheet_data(ws, year):
-    """Parse una singola scheda Excel e restituisce appuntamenti e pazienti"""
+def is_red_color(color_value):
+    """Controlla se un colore è rosso"""
+    if not color_value:
+        return False
+    color_str = str(color_value).upper()
+    # Colori rossi comuni (RGB)
+    red_colors = ['FFCC0000', 'FFFF0000', 'FF990000', 'FFC00000', 'FFCC0000', 'FF800000']
+    # Controlla se è un colore rosso (componente R alto, G e B bassi)
+    if color_str in red_colors:
+        return True
+    # Analizza il colore RGB
+    if len(color_str) == 8 and color_str.startswith('FF'):
+        try:
+            r = int(color_str[2:4], 16)
+            g = int(color_str[4:6], 16)
+            b = int(color_str[6:8], 16)
+            # È rosso se R > 180 e G < 100 e B < 100
+            if r > 180 and g < 100 and b < 100:
+                return True
+        except:
+            pass
+    return False
+
+def parse_sheet_data(ws, year, ws_with_colors=None):
+    """Parse una singola scheda Excel e restituisce appuntamenti e pazienti
+    ws_with_colors: worksheet caricato senza data_only per leggere i colori
+    """
     appointments = []
     patients = set()
+    
+    # Usa ws_with_colors se disponibile per i colori
+    color_ws = ws_with_colors or ws
     
     # Struttura del foglio:
     # Riga 3: date (possono essere datetime o stringhe DD/MM)
@@ -4946,6 +4974,16 @@ def parse_sheet_data(ws, year):
             if cell_value:
                 cell = str(cell_value).strip()
                 if cell and cell not in ["", "-"]:
+                    # Controlla se la cella è rossa (non presentato)
+                    is_not_presented = False
+                    try:
+                        color_cell = color_ws.cell(row=row, column=col)
+                        font_color = color_cell.font.color
+                        if font_color and font_color.rgb:
+                            is_not_presented = is_red_color(font_color.rgb)
+                    except:
+                        pass
+                    
                     # Può contenere più nomi separati da / o ,
                     names = regex_module.split(r'[/,]', cell)
                     for name in names:
@@ -4966,7 +5004,8 @@ def parse_sheet_data(ws, year):
                                     "ora": ora,
                                     "tipo": mapping["tipo"],
                                     "cognome": cognome,
-                                    "nome": nome
+                                    "nome": nome,
+                                    "not_presented": is_not_presented  # Nuovo campo
                                 })
     
     return appointments, patients
