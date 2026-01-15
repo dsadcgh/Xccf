@@ -4780,7 +4780,7 @@ from rapidfuzz import fuzz, process
 from collections import defaultdict
 
 GOOGLE_SHEET_ID = "1gO9i0IuoReM0yto7GqQlIMWjdrzDToDWJ9dQ8z0badE"
-SIMILARITY_THRESHOLD = 80  # Soglia di similarità per considerare un potenziale errore
+SIMILARITY_THRESHOLD = 65  # Soglia di similarità per considerare un potenziale errore (abbassata per catturare più casi)
 
 class GoogleSheetsSyncRequest(BaseModel):
     ambulatorio: Ambulatorio
