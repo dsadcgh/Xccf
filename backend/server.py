@@ -5051,12 +5051,13 @@ async def sync_from_google_sheets(
         wb_data = load_workbook(io.BytesIO(response.content), data_only=True)
         wb_colors = load_workbook(io.BytesIO(response.content), data_only=False)
         
-        # NON cancellare gli appuntamenti manuali!
-        # Cancella solo gli appuntamenti importati da Google Sheets
+        # NON cancellare gli appuntamenti manuali o modificati manualmente!
+        # Cancella solo gli appuntamenti importati da Google Sheets che NON sono stati modificati
         if data.clear_existing:
             await db.appointments.delete_many({
                 "ambulatorio": data.ambulatorio.value,
-                "note": "Importato da Google Sheets"
+                "note": "Importato da Google Sheets",
+                "manually_modified": {"$ne": True}  # Non cancellare appuntamenti modificati manualmente
             })
         
         # Parse tutti i fogli
