@@ -155,10 +155,20 @@ export default function AgendaPage() {
         if (response.data.has_conflicts) {
           // Ci sono conflitti da risolvere
           setSyncConflicts(response.data.conflicts);
-          // Inizializza le scelte con i suggerimenti
+          // Inizializza le scelte: pre-seleziona pazienti esistenti nel DB
           const initialChoices = {};
           response.data.conflicts.forEach(conflict => {
-            initialChoices[conflict.id] = conflict.suggested || conflict.options[0]?.name;
+            // Pre-seleziona tutti i pazienti che esistono già nel database
+            const existingPatients = conflict.options
+              .filter(opt => opt.exists_in_db)
+              .map(opt => opt.name);
+            
+            // Se nessun paziente esiste nel DB, seleziona il primo suggerito
+            if (existingPatients.length > 0) {
+              initialChoices[conflict.id] = existingPatients;
+            } else {
+              initialChoices[conflict.id] = [conflict.suggested || conflict.options[0]?.name].filter(Boolean);
+            }
           });
           setSyncConflictChoices(initialChoices);
           setSyncStep("conflicts");
