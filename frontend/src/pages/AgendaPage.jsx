@@ -207,8 +207,14 @@ export default function AgendaPage() {
         syncConflicts.forEach(conflict => {
           const chosenNames = syncConflictChoices[conflict.id] || [];
           
+          console.log(`Conflitto ${conflict.id}:`, {
+            opzioni: conflict.options.map(o => o.name),
+            selezionati: chosenNames
+          });
+          
           // Se sono selezionati tutti, non serve nessuna correzione (ogni nome rimane separato)
           if (chosenNames.length === conflict.options.length) {
+            console.log("Tutti selezionati, skip correzioni");
             return;
           }
           
@@ -220,11 +226,14 @@ export default function AgendaPage() {
               const targetName = nameAssociations[associationKey] || chosenNames[0];
               if (targetName) {
                 nameCorrections[option.name] = targetName;
+                console.log(`Correzione: "${option.name}" -> "${targetName}"`);
               }
             }
           });
         });
       }
+      
+      console.log("Correzioni finali inviate:", nameCorrections);
       
       const response = await apiClient.post("/sync/google-sheets", {
         ambulatorio,
