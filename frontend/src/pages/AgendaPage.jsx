@@ -261,6 +261,7 @@ export default function AgendaPage() {
         setSyncConflicts([]);
         setSyncConflictChoices({});
         setPendingIgnoredNames([]); // Reset nomi pending
+        setNameAssociations({}); // Reset associazioni
       }
     } catch (error) {
       console.error("Sync error:", error);
