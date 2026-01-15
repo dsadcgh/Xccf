@@ -1537,11 +1537,10 @@ export default function AgendaPage() {
                                 setSyncConflictChoices(prev => {
                                   const current = prev[conflict.id] || [];
                                   if (current.includes(option.name)) {
-                                    // Deseleziona - ma deve rimanere almeno 1 selezionato
-                                    const newSelection = current.filter(n => n !== option.name);
+                                    // Deseleziona - permette di deselezionare tutti
                                     return {
                                       ...prev,
-                                      [conflict.id]: newSelection.length > 0 ? newSelection : current
+                                      [conflict.id]: current.filter(n => n !== option.name)
                                     };
                                   } else {
                                     // Seleziona
