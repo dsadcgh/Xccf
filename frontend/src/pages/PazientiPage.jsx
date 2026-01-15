@@ -518,6 +518,65 @@ export default function PazientiPage() {
     }
   };
 
+  // Funzioni per Ricetta MED
+  const openMedDialog = (patient, e) => {
+    if (e) e.stopPropagation();
+    setEditingMedPatient(patient);
+    setMedRicetta(patient.ricetta_med || []);
+    setMedQuantita(patient.quantita_med?.toString() || "");
+    setMedDataInizio(patient.data_inizio_med || "");
+    setMedDialogOpen(true);
+  };
+
+  const resetMedSettings = async (patient, e) => {
+    if (e) e.stopPropagation();
+    try {
+      await apiClient.put(`/patients/${patient.id}`, {
+        ricetta_med: null,
+        quantita_med: null,
+        data_inizio_med: null
+      });
+      toast.success("Impostazioni ricetta resettate");
+      fetchAllPatients();
+    } catch (error) {
+      toast.error("Errore nel reset");
+    }
+  };
+
+  const saveMedSettings = async () => {
+    if (!editingMedPatient) return;
+    try {
+      const updateData = {
+        ricetta_med: medRicetta.length > 0 ? medRicetta : null,
+        quantita_med: medQuantita ? parseInt(medQuantita) : null,
+        data_inizio_med: medDataInizio || null
+      };
+      await apiClient.put(`/patients/${editingMedPatient.id}`, updateData);
+      toast.success("Impostazioni ricetta salvate");
+      setMedDialogOpen(false);
+      fetchAllPatients();
+    } catch (error) {
+      toast.error("Errore nel salvataggio");
+    }
+  };
+
+  const toggleMedPrestazione = (value) => {
+    setMedRicetta(prev => 
+      prev.includes(value) 
+        ? prev.filter(p => p !== value)
+        : [...prev, value]
+    );
+  };
+
+  // Funzione helper per mostrare le prestazioni in formato leggibile
+  const formatPrestazioni = (prestazioni) => {
+    if (!prestazioni || prestazioni.length === 0) return "Medicazione e fasciatura";
+    return prestazioni.map(p => {
+      const prest = PRESTAZIONI_MED.find(pm => pm.value === p);
+      return prest ? prest.label : p;
+    }).join(", ");
+  };
+
   const handleDeletePatient = async () => {
     if (!selectedPatientForDelete) return;
     
