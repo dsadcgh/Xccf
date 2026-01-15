@@ -5154,7 +5154,7 @@ async def sync_from_google_sheets(
         # Applica correzioni nomi se fornite
         name_corrections = data.name_corrections or {}
         if name_corrections:
-            logger.info(f"Applicando {len(name_corrections)} correzioni nomi")
+            logger.info(f"Applicando {len(name_corrections)} correzioni nomi: {name_corrections}")
             
             # Aggiorna i nomi negli appuntamenti
             for apt in all_appointments:
@@ -5162,8 +5162,10 @@ async def sync_from_google_sheets(
                 if full_name in name_corrections:
                     corrected = name_corrections[full_name]
                     parts = corrected.split(maxsplit=1)
+                    old_name = f"{apt['cognome']} {apt['nome']}"
                     apt['cognome'] = parts[0]
                     apt['nome'] = parts[1] if len(parts) > 1 else ""
+                    logger.info(f"Corretto appuntamento: '{old_name}' -> '{apt['cognome']} {apt['nome']}'")
             
             # Aggiorna il set dei pazienti
             new_patients = set()
@@ -5173,6 +5175,7 @@ async def sync_from_google_sheets(
                     corrected = name_corrections[full_name]
                     parts = corrected.split(maxsplit=1)
                     new_patients.add((parts[0], parts[1] if len(parts) > 1 else ""))
+                    logger.info(f"Corretto paziente: '{full_name}' -> '{corrected}'")
                 else:
                     new_patients.add((cognome, nome))
             all_patients = new_patients
