@@ -4834,6 +4834,40 @@ def calculate_similarity(name1: str, name2: str) -> float:
     if norm1 == norm2:
         return 100.0
     
+    # Estrai cognomi e nomi
+    parts1 = norm1.split()
+    parts2 = norm2.split()
+    cognome1 = parts1[0] if parts1 else norm1
+    cognome2 = parts2[0] if parts2 else norm2
+    nome1 = " ".join(parts1[1:]) if len(parts1) > 1 else ""
+    nome2 = " ".join(parts2[1:]) if len(parts2) > 1 else ""
+    
+    # CASO SPECIALE: Se uno è solo cognome e l'altro ha cognome + nome
+    # Es: "Schifano" vs "Schifano Vincenzo"
+    if len(parts1) == 1 and len(parts2) > 1:
+        # parts1 è solo cognome, parts2 ha cognome + nome
+        if fuzz.ratio(cognome1, cognome2) >= 85:
+            return 92.0  # Alta similarità - stesso cognome
+    elif len(parts2) == 1 and len(parts1) > 1:
+        # parts2 è solo cognome, parts1 ha cognome + nome
+        if fuzz.ratio(cognome1, cognome2) >= 85:
+            return 92.0  # Alta similarità - stesso cognome
+    
+    # CASO SPECIALE: Cognome identico con nome diverso o mancante
+    cognome_similarity = fuzz.ratio(cognome1, cognome2)
+    if cognome_similarity >= 95:
+        # Cognome praticamente identico - alta probabilità stesso paziente
+        if not nome1 or not nome2:
+            return 90.0  # Uno dei due non ha nome
+        # Entrambi hanno nome - verifica similarità nome
+        nome_sim = fuzz.ratio(nome1, nome2)
+        if nome_sim >= 70:
+            return 95.0  # Stesso cognome, nome simile
+        elif nome_sim >= 50:
+            return 85.0  # Stesso cognome, nome un po' diverso
+        else:
+            return 75.0  # Stesso cognome, nome diverso (potrebbero essere parenti)
+    
     # Usa multiple metriche di rapidfuzz
     ratio = fuzz.ratio(norm1, norm2)
     partial_ratio = fuzz.partial_ratio(norm1, norm2)
@@ -4841,15 +4875,13 @@ def calculate_similarity(name1: str, name2: str) -> float:
     token_set = fuzz.token_set_ratio(norm1, norm2)
     
     # Media pesata delle metriche
-    weighted_score = (ratio * 0.3 + partial_ratio * 0.2 + token_sort * 0.25 + token_set * 0.25)
+    weighted_score = (ratio * 0.25 + partial_ratio * 0.25 + token_sort * 0.25 + token_set * 0.25)
     
-    # Bonus per cognomi molto simili (prima parola)
-    cognome1 = norm1.split()[0] if norm1.split() else norm1
-    cognome2 = norm2.split()[0] if norm2.split() else norm2
-    cognome_similarity = fuzz.ratio(cognome1, cognome2)
-    
+    # Bonus per cognomi molto simili
     if cognome_similarity >= 85:
-        weighted_score = min(100, weighted_score + 10)
+        weighted_score = min(100, weighted_score + 15)
+    elif cognome_similarity >= 75:
+        weighted_score = min(100, weighted_score + 8)
     
     return weighted_score
 
