@@ -1427,7 +1427,7 @@ export default function AgendaPage() {
               </div>
 
               <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setSyncDialogOpen(false)}>
+                <Button variant="outline" onClick={() => { setSyncDialogOpen(false); setPendingIgnoredNames([]); }}>
                   Annulla
                 </Button>
                 <Button 
