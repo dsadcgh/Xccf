@@ -4889,12 +4889,23 @@ def find_similar_names(name: str, existing_names: set, all_names: set, threshold
     """Trova nomi simili usando fuzzy matching avanzato. Ritorna lista di (nome, similarità)"""
     similar = []
     
+    # Estrai cognome dal nome cercato
+    name_parts = normalize_name(name).split()
+    search_cognome = name_parts[0] if name_parts else normalize_name(name)
+    
     # Cerca tra i nomi esistenti nel database
     for existing in existing_names:
         if name.lower() != existing.lower():
             similarity = calculate_similarity(name, existing)
-            if similarity >= threshold:
-                similar.append((existing, similarity, "database"))
+            
+            # Controllo speciale: stesso cognome = sempre includere
+            existing_parts = normalize_name(existing).split()
+            existing_cognome = existing_parts[0] if existing_parts else normalize_name(existing)
+            cognome_match = fuzz.ratio(search_cognome, existing_cognome) >= 90
+            
+            if similarity >= threshold or cognome_match:
+                final_similarity = max(similarity, 70 if cognome_match else 0)
+                similar.append((existing, final_similarity, "database"))
     
     # Cerca tra tutti i nomi nel foglio
     for other in all_names:
