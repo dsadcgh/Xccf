@@ -196,15 +196,21 @@ export default function AgendaPage() {
       if (!nameCorrections && Object.keys(syncConflictChoices).length > 0) {
         nameCorrections = {};
         syncConflicts.forEach(conflict => {
-          const chosenName = syncConflictChoices[conflict.id];
-          if (chosenName === "KEEP_ALL") {
-            // Tieni tutti i nomi come separati - non aggiungere correzioni
+          const chosenNames = syncConflictChoices[conflict.id] || [];
+          
+          // Se sono selezionati tutti, non serve nessuna correzione (ogni nome rimane separato)
+          if (chosenNames.length === conflict.options.length) {
             return;
           }
-          // Mappa tutti gli altri nomi al nome scelto
+          
+          // Il primo nome selezionato è il "principale"
+          const primaryName = chosenNames[0];
+          if (!primaryName) return;
+          
+          // Mappa i nomi NON selezionati al nome principale
           conflict.options.forEach(option => {
-            if (option.name !== chosenName) {
-              nameCorrections[option.name] = chosenName;
+            if (!chosenNames.includes(option.name)) {
+              nameCorrections[option.name] = primaryName;
             }
           });
         });
