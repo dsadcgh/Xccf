@@ -268,40 +268,25 @@ export default function AgendaPage() {
     }
   };
 
-  // Funzione per segnare un nome come "non chiedere più" (salvato solo dopo conferma sync)
-  const handleIgnoreName = (name, dates, conflictId) => {
-    // Aggiungi alla lista pending (non salva ancora nel DB)
+  // Funzione per toggle "non chiedere più" (salvato solo dopo conferma sync)
+  const handleToggleIgnoreName = (name, dates) => {
     setPendingIgnoredNames(prev => {
-      // Evita duplicati
-      if (prev.some(p => p.name === name)) return prev;
-      return [...prev, { name, dates: dates || [] }];
+      const isAlreadyIgnored = prev.some(p => p.name === name);
+      if (isAlreadyIgnored) {
+        // Rimuovi dalla lista pending
+        toast.info(`"${name}" tornerà nelle scelte`);
+        return prev.filter(p => p.name !== name);
+      } else {
+        // Aggiungi alla lista pending
+        toast.success(`"${name}" verrà ignorato dopo la conferma`);
+        return [...prev, { name, dates: dates || [] }];
+      }
     });
-    
-    toast.success(`"${name}" verrà ignorato dopo la conferma`);
-    
-    // Rimuovi questo nome dal conflitto corrente (solo visivamente)
-    setSyncConflicts(prev => {
-      return prev.map(conflict => {
-        if (conflict.id === conflictId) {
-          const newOptions = conflict.options.filter(opt => opt.name !== name);
-          // Se rimane solo 1 opzione, rimuovi l'intero conflitto
-          if (newOptions.length <= 1) {
-            return null;
-          }
-          return { ...conflict, options: newOptions };
-        }
-        return conflict;
-      }).filter(Boolean);
-    });
-    
-    // Aggiorna anche le scelte
-    setSyncConflictChoices(prev => {
-      const current = prev[conflictId] || [];
-      return {
-        ...prev,
-        [conflictId]: current.filter(n => n !== name)
-      };
-    });
+  };
+
+  // Verifica se un nome è nella lista pending ignore
+  const isNamePendingIgnore = (name) => {
+    return pendingIgnoredNames.some(p => p.name === name);
   };
 
   // Carica i nomi ignorati dal database
