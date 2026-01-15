@@ -5437,8 +5437,21 @@ async def analyze_google_sheets_sync(
                 all_names_in_conflict = [full_name] + [s[0] for s in similar_results]
                 conflict_options = []
                 
+                # NUOVO: Conta quanti nomi NON sono nel database
+                names_not_in_db = [name for name in all_names_in_conflict if name not in existing_names]
+                names_in_db = [name for name in all_names_in_conflict if name in existing_names]
+                
+                # Se TUTTI i nomi sono già nel database, non mostrare il conflitto
+                # (sono pazienti diversi già confermati)
+                if len(names_not_in_db) == 0:
+                    # Tutti nel DB - skip questo conflitto
+                    continue
+                
+                # Se ci sono SOLO nomi dal foglio (nessuno nel DB), mostra conflitto normale
+                # Se c'è MIX (alcuni nel DB, alcuni no), mostra conflitto per associare gli errori
+                
                 # Flag per capire se c'è un paziente esistente nel database
-                has_existing_patient = any(name in existing_names for name in all_names_in_conflict)
+                has_existing_patient = len(names_in_db) > 0
                 
                 for name in all_names_in_conflict:
                     occ = name_occurrences.get(name, {"count": 0, "dates": set(), "tipo": set()})
