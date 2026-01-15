@@ -139,6 +139,11 @@ export default function AgendaPage() {
   const [syncConflictChoices, setSyncConflictChoices] = useState({});
   const [syncStep, setSyncStep] = useState("initial"); // initial, conflicts, syncing
   const [pendingIgnoredNames, setPendingIgnoredNames] = useState([]); // Nomi da ignorare (salvati solo dopo conferma)
+  
+  // Database scelte (nomi ignorati)
+  const [ignoredNamesDialogOpen, setIgnoredNamesDialogOpen] = useState(false);
+  const [ignoredNamesList, setIgnoredNamesList] = useState([]);
+  const [loadingIgnoredNames, setLoadingIgnoredNames] = useState(false);
 
   const isVillaGinestre = ambulatorio === "villa_ginestre";
 
