@@ -1299,60 +1299,184 @@ export default function AgendaPage() {
       </Dialog>
 
       {/* Dialog Sincronizza Google Sheets */}
-      <Dialog open={syncDialogOpen} onOpenChange={setSyncDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog open={syncDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setSyncStep("initial");
+          setSyncConflicts([]);
+          setSyncConflictChoices({});
+        }
+        setSyncDialogOpen(open);
+      }}>
+        <DialogContent className={syncStep === "conflicts" ? "sm:max-w-2xl max-h-[80vh]" : "sm:max-w-md"}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileSpreadsheet className="w-5 h-5 text-blue-600" />
-              Sincronizza con Google Sheets
+              {syncStep === "conflicts" ? "Risolvi Conflitti Nomi" : "Sincronizza con Google Sheets"}
             </DialogTitle>
             <DialogDescription>
-              Importa appuntamenti dal foglio Google collegato. I pazienti e gli appuntamenti mancanti verranno creati automaticamente.
+              {syncStep === "conflicts" 
+                ? "Abbiamo trovato nomi simili che potrebbero essere errori di battitura. Scegli quale nome tenere per ogni gruppo."
+                : "Importa appuntamenti dal foglio Google collegato. I pazienti e gli appuntamenti mancanti verranno creati automaticamente."}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
-            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <p className="text-sm text-blue-800">
-                <strong>Cosa verrà importato:</strong>
-              </p>
-              <ul className="text-sm text-blue-700 mt-2 space-y-1">
-                <li>• Nuovi pazienti non presenti nel sistema</li>
-                <li>• Appuntamenti PICC e MED per la <strong>settimana corrente</strong></li>
-                <li>• Lunedì del foglio → Lunedì di questa settimana</li>
-                <li>• Gli appuntamenti esistenti non verranno duplicati</li>
-              </ul>
-            </div>
+          {syncStep === "initial" && (
+            <>
+              <div className="space-y-4 py-4">
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm text-blue-800">
+                    <strong>Cosa verrà importato:</strong>
+                  </p>
+                  <ul className="text-sm text-blue-700 mt-2 space-y-1">
+                    <li>• Nuovi pazienti non presenti nel sistema</li>
+                    <li>• Appuntamenti PICC e MED da tutti i fogli</li>
+                    <li>• <strong>Rilevamento automatico errori di battitura</strong></li>
+                    <li>• Gli appuntamenti esistenti non verranno duplicati</li>
+                  </ul>
+                </div>
 
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-              <p className="text-sm text-amber-800">
-                ⚠️ Assicurati che il foglio Google sia <strong>pubblico in lettura</strong>
-              </p>
-            </div>
-          </div>
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <p className="text-sm text-amber-800">
+                    ⚠️ Assicurati che il foglio Google sia <strong>pubblico in lettura</strong>
+                  </p>
+                </div>
+              </div>
 
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setSyncDialogOpen(false)}>
-              Annulla
-            </Button>
-            <Button 
-              onClick={handleGoogleSheetsSync}
-              disabled={syncLoading}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              {syncLoading ? (
-                <>
-                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                  Sincronizzando...
-                </>
-              ) : (
-                <>
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                  Sincronizza Ora
-                </>
-              )}
-            </Button>
-          </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setSyncDialogOpen(false)}>
+                  Annulla
+                </Button>
+                <Button 
+                  onClick={handleAnalyzeSync}
+                  disabled={syncAnalyzing}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  {syncAnalyzing ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      Analisi in corso...
+                    </>
+                  ) : (
+                    <>
+                      <Search className="w-4 h-4 mr-2" />
+                      Analizza e Sincronizza
+                    </>
+                  )}
+                </Button>
+              </div>
+            </>
+          )}
+
+          {syncStep === "conflicts" && (
+            <>
+              <ScrollArea className="max-h-[50vh] pr-4">
+                <div className="space-y-4 py-2">
+                  {syncConflicts.map((conflict, idx) => (
+                    <div key={conflict.id} className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                      <div className="flex items-center gap-2 mb-3">
+                        <AlertTriangle className="w-5 h-5 text-amber-600" />
+                        <span className="font-medium text-amber-800">
+                          Conflitto #{idx + 1}: {conflict.reason}
+                        </span>
+                      </div>
+                      
+                      <RadioGroup 
+                        value={syncConflictChoices[conflict.id] || ""} 
+                        onValueChange={(value) => setSyncConflictChoices(prev => ({
+                          ...prev, 
+                          [conflict.id]: value
+                        }))}
+                        className="space-y-2"
+                      >
+                        {conflict.options.map((option, optIdx) => (
+                          <div key={optIdx} className="flex items-start space-x-3 p-2 rounded hover:bg-amber-100 transition-colors">
+                            <RadioGroupItem value={option.name} id={`${conflict.id}-${optIdx}`} className="mt-1" />
+                            <Label htmlFor={`${conflict.id}-${optIdx}`} className="flex-1 cursor-pointer">
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-gray-900">{option.name}</span>
+                                {option.exists_in_db && (
+                                  <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
+                                    già nel sistema
+                                  </span>
+                                )}
+                                {option.source === "foglio" && !option.exists_in_db && (
+                                  <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">
+                                    dal foglio
+                                  </span>
+                                )}
+                                <span className="text-xs text-gray-500">
+                                  ({option.similarity}% simile)
+                                </span>
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {option.occurrences > 0 && (
+                                  <span>{option.occurrences} appuntamenti • </span>
+                                )}
+                                {option.dates.length > 0 && (
+                                  <span>Date: {option.dates.slice(0, 3).join(", ")}{option.dates.length > 3 ? "..." : ""}</span>
+                                )}
+                                {option.tipos?.length > 0 && (
+                                  <span> • Tipo: {option.tipos.join(", ")}</span>
+                                )}
+                              </div>
+                            </Label>
+                          </div>
+                        ))}
+                        
+                        {/* Opzione per tenere tutti */}
+                        <div className="flex items-start space-x-3 p-2 rounded hover:bg-gray-100 transition-colors border-t border-amber-200 mt-2 pt-3">
+                          <RadioGroupItem value="KEEP_ALL" id={`${conflict.id}-keep-all`} className="mt-1" />
+                          <Label htmlFor={`${conflict.id}-keep-all`} className="flex-1 cursor-pointer">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-gray-700">Tieni entrambi come pazienti separati</span>
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              Crea pazienti distinti per ogni nome (non sono la stessa persona)
+                            </div>
+                          </Label>
+                        </div>
+                      </RadioGroup>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+
+              <div className="flex justify-between gap-2 pt-4 border-t">
+                <Button variant="outline" onClick={() => setSyncStep("initial")}>
+                  ← Indietro
+                </Button>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setSyncDialogOpen(false)}>
+                    Annulla
+                  </Button>
+                  <Button 
+                    onClick={() => handleGoogleSheetsSync()}
+                    disabled={syncLoading || syncConflicts.some(c => !syncConflictChoices[c.id])}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    {syncLoading ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                        Sincronizzando...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                        Conferma e Sincronizza
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {syncStep === "syncing" && (
+            <div className="py-8 text-center">
+              <RefreshCw className="w-12 h-12 mx-auto text-blue-600 animate-spin mb-4" />
+              <p className="text-gray-600">Sincronizzazione in corso...</p>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
