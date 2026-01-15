@@ -1503,6 +1503,21 @@ export default function AgendaPage() {
                                   )}
                                 </div>
                               </div>
+                              {/* Pulsante Non chiedere più */}
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="ml-2 text-xs text-orange-600 hover:text-orange-700 hover:bg-orange-50 shrink-0"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleIgnoreName(option.name, option.dates, conflict.id);
+                                }}
+                                title="Non mostrare più questo nome nei conflitti"
+                              >
+                                <Ban className="w-3 h-3 mr-1" />
+                                Non chiedere più
+                              </Button>
                             </div>
                           );
                         })}
