@@ -4801,6 +4801,15 @@ class GoogleSheetsSyncPreview(BaseModel):
     sheet_id: Optional[str] = None
     year: int = 2026
 
+class IgnoredSyncName(BaseModel):
+    """Nome da ignorare nelle sincronizzazioni future"""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    ambulatorio: str
+    name: str  # Nome esatto dal foglio
+    dates: List[str] = []  # Date in cui compare questo nome (per riferimento)
+    ignored_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    ignored_by: str = ""  # Username che ha ignorato
+
 def normalize_name(name: str) -> str:
     """Normalizza un nome per il confronto"""
     # Rimuovi spazi multipli
