@@ -5164,8 +5164,53 @@ async def sync_from_google_sheets(
             })
             
             if existing_apt:
+                # Se l'appuntamento esistente è manuale (non da Google Sheets), aggiorna solo lo stato
+                if existing_apt.get("note") != "Importato da Google Sheets":
+                    # Aggiorna solo se l'appuntamento dal foglio indica "non presentato"
+                    if apt.get("not_presented"):
+                        await db.appointments.update_one(
+                            {"id": existing_apt["id"]},
+                            {"$set": {"stato": "non_presentato"}}
+                        )
                 skipped_appointments += 1
                 continue
+            
+            # Controlla il numero di slot per tipo in questo orario
+            # Normalmente max 3 PICC + 2 MED, ma se ci sono appuntamenti manuali, max 5 totali
+            slot_count_same_type = await db.appointments.count_documents({
+                "ambulatorio": data.ambulatorio.value,
+                "data": apt["date"],
+                "ora": apt["ora"],
+                "tipo": apt["tipo"]
+            })
+            
+            # Conta appuntamenti manuali in questo slot
+            manual_count = await db.appointments.count_documents({
+                "ambulatorio": data.ambulatorio.value,
+                "data": apt["date"],
+                "ora": apt["ora"],
+                "note": {"$ne": "Importato da Google Sheets"}
+            })
+            
+            # Limiti normali: PICC=3, MED=2
+            max_slots = 3 if apt["tipo"] == "PICC" else 2
+            
+            # Se ci sono appuntamenti manuali, permetti fino a 5 totali
+            if manual_count > 0:
+                total_count = await db.appointments.count_documents({
+                    "ambulatorio": data.ambulatorio.value,
+                    "data": apt["date"],
+                    "ora": apt["ora"]
+                })
+                if total_count >= 5:
+                    skipped_appointments += 1
+                    continue
+            elif slot_count_same_type >= max_slots:
+                skipped_appointments += 1
+                continue
+            
+            # Determina lo stato basandosi sul colore rosso (non presentato)
+            stato = "non_presentato" if apt.get("not_presented") else "da_fare"
             
             # Crea appuntamento
             new_apt = {
@@ -5179,7 +5224,7 @@ async def sync_from_google_sheets(
                 "tipo": apt["tipo"],
                 "prestazioni": ["medicazione_semplice"] if apt["tipo"] == "MED" else ["medicazione_semplice", "irrigazione_catetere"],
                 "note": "Importato da Google Sheets",
-                "stato": "da_fare",
+                "stato": stato,
                 "completed": False,
                 "created_at": datetime.now(timezone.utc).isoformat()
             }
