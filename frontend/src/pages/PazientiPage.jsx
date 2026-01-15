@@ -1587,6 +1587,110 @@ export default function PazientiPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Dialog Ricetta MED */}
+      <Dialog open={medDialogOpen} onOpenChange={setMedDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-blue-600" />
+              Impostazioni Ricetta MED
+            </DialogTitle>
+            <DialogDescription>
+              {editingMedPatient && (
+                <span>Paziente: <strong>{editingMedPatient.cognome} {editingMedPatient.nome}</strong></span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {/* Ricetta - Prestazioni */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <FileText className="w-4 h-4" />
+                Ricetta (Prestazioni)
+              </Label>
+              <p className="text-xs text-gray-500">Se non selezioni nulla: Medicazione e Fasciatura semplice</p>
+              <div className="grid grid-cols-2 gap-2">
+                {PRESTAZIONI_MED.map(prest => (
+                  <div
+                    key={prest.value}
+                    onClick={() => toggleMedPrestazione(prest.value)}
+                    className={`p-2 rounded-lg border cursor-pointer transition-all text-sm ${
+                      medRicetta.includes(prest.value)
+                        ? "bg-blue-50 border-blue-300 text-blue-700"
+                        : "bg-white border-gray-200 hover:border-gray-300"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      {medRicetta.includes(prest.value) ? (
+                        <CheckSquare className="w-4 h-4" />
+                      ) : (
+                        <Square className="w-4 h-4" />
+                      )}
+                      <span>{prest.label}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Quantità */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Hash className="w-4 h-4" />
+                Quantità (volte in agenda)
+              </Label>
+              <p className="text-xs text-gray-500">Max 24. Lascia vuoto se non necessario.</p>
+              <Input
+                type="number"
+                min="1"
+                max="24"
+                value={medQuantita}
+                onChange={(e) => setMedQuantita(e.target.value)}
+                placeholder="es. 12"
+              />
+            </div>
+
+            {/* Data Inizio */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Calendar className="w-4 h-4" />
+                Data Inizio
+              </Label>
+              <p className="text-xs text-gray-500">Giorno da cui iniziare a contare la quantità</p>
+              <Input
+                type="date"
+                value={medDataInizio}
+                onChange={(e) => setMedDataInizio(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-between">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setMedRicetta([]);
+                setMedQuantita("");
+                setMedDataInizio("");
+              }}
+              className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+            >
+              <RotateCcw className="w-4 h-4 mr-2" />
+              Pulisci
+            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setMedDialogOpen(false)}>
+                Annulla
+              </Button>
+              <Button onClick={saveMedSettings} className="bg-blue-600 hover:bg-blue-700">
+                Salva
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
