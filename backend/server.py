@@ -4768,49 +4768,95 @@ import httpx
 import re as regex_module
 from openpyxl import load_workbook
 from rapidfuzz import fuzz, process
+from collections import defaultdict
 
 GOOGLE_SHEET_ID = "1gO9i0IuoReM0yto7GqQlIMWjdrzDToDWJ9dQ8z0badE"
-SIMILARITY_THRESHOLD = 75  # Soglia di similarità per considerare un potenziale errore
+SIMILARITY_THRESHOLD = 80  # Soglia di similarità per considerare un potenziale errore
 
 class GoogleSheetsSyncRequest(BaseModel):
     ambulatorio: Ambulatorio
     sheet_id: Optional[str] = None
     year: int = 2026
     clear_existing: bool = True
-    # Mappatura correzioni: {"nome_errato": "nome_corretto"}
+    # Mappatura correzioni: {"nome_errato": "nome_corretto"} o {"nome": "KEEP_BOTH"} per tenere entrambi
     name_corrections: Optional[dict] = None
 
 class SimilarNameConflict(BaseModel):
-    original_name: str  # Nome trovato nel foglio
-    similar_names: List[str]  # Nomi simili esistenti o nel foglio
-    occurrences: int  # Quante volte appare nel foglio
-    dates: List[str]  # Date in cui appare
+    original_name: str
+    similar_names: List[str]
+    occurrences: int
+    dates: List[str]
 
 class GoogleSheetsSyncPreview(BaseModel):
     ambulatorio: Ambulatorio
     sheet_id: Optional[str] = None
     year: int = 2026
 
-def find_similar_names(name: str, existing_names: set, all_names: set, threshold: int = SIMILARITY_THRESHOLD) -> List[str]:
-    """Trova nomi simili usando fuzzy matching"""
+def normalize_name(name: str) -> str:
+    """Normalizza un nome per il confronto"""
+    # Rimuovi spazi multipli
+    name = " ".join(name.split())
+    # Converti in minuscolo
+    name = name.lower()
+    # Sostituisci caratteri simili (0->o, 1->i, etc.)
+    replacements = {
+        '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's',
+        '7': 't', '8': 'b', '9': 'g', '@': 'a'
+    }
+    for old, new in replacements.items():
+        name = name.replace(old, new)
+    return name.strip()
+
+def calculate_similarity(name1: str, name2: str) -> float:
+    """Calcola la similarità tra due nomi usando multiple metriche"""
+    norm1 = normalize_name(name1)
+    norm2 = normalize_name(name2)
+    
+    # Se sono identici dopo la normalizzazione
+    if norm1 == norm2:
+        return 100.0
+    
+    # Usa multiple metriche di rapidfuzz
+    ratio = fuzz.ratio(norm1, norm2)
+    partial_ratio = fuzz.partial_ratio(norm1, norm2)
+    token_sort = fuzz.token_sort_ratio(norm1, norm2)
+    token_set = fuzz.token_set_ratio(norm1, norm2)
+    
+    # Media pesata delle metriche
+    weighted_score = (ratio * 0.3 + partial_ratio * 0.2 + token_sort * 0.25 + token_set * 0.25)
+    
+    # Bonus per cognomi molto simili (prima parola)
+    cognome1 = norm1.split()[0] if norm1.split() else norm1
+    cognome2 = norm2.split()[0] if norm2.split() else norm2
+    cognome_similarity = fuzz.ratio(cognome1, cognome2)
+    
+    if cognome_similarity >= 85:
+        weighted_score = min(100, weighted_score + 10)
+    
+    return weighted_score
+
+def find_similar_names(name: str, existing_names: set, all_names: set, threshold: int = SIMILARITY_THRESHOLD) -> List[tuple]:
+    """Trova nomi simili usando fuzzy matching avanzato. Ritorna lista di (nome, similarità)"""
     similar = []
-    name_lower = name.lower().strip()
     
     # Cerca tra i nomi esistenti nel database
     for existing in existing_names:
-        existing_lower = existing.lower().strip()
-        if name_lower != existing_lower:
-            ratio = fuzz.ratio(name_lower, existing_lower)
-            if ratio >= threshold:
-                similar.append(existing)
+        if name.lower() != existing.lower():
+            similarity = calculate_similarity(name, existing)
+            if similarity >= threshold:
+                similar.append((existing, similarity, "database"))
     
     # Cerca tra tutti i nomi nel foglio
     for other in all_names:
-        other_lower = other.lower().strip()
-        if name_lower != other_lower and other not in similar:
-            ratio = fuzz.ratio(name_lower, other_lower)
-            if ratio >= threshold:
-                similar.append(other)
+        if name.lower() != other.lower():
+            # Evita duplicati
+            if not any(s[0].lower() == other.lower() for s in similar):
+                similarity = calculate_similarity(name, other)
+                if similarity >= threshold:
+                    similar.append((other, similarity, "foglio"))
+    
+    # Ordina per similarità decrescente
+    similar.sort(key=lambda x: x[1], reverse=True)
     
     return similar
 
