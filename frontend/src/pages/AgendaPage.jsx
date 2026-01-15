@@ -243,6 +243,47 @@ export default function AgendaPage() {
     }
   };
 
+  // Funzione per ignorare un nome nelle sincronizzazioni future
+  const handleIgnoreName = async (name, dates, conflictId) => {
+    try {
+      await apiClient.post("/sync/ignored-names", {
+        ambulatorio,
+        name,
+        dates: dates || []
+      });
+      
+      toast.success(`"${name}" non verrà più mostrato nei conflitti`);
+      
+      // Rimuovi questo nome dal conflitto corrente
+      setSyncConflicts(prev => {
+        return prev.map(conflict => {
+          if (conflict.id === conflictId) {
+            const newOptions = conflict.options.filter(opt => opt.name !== name);
+            // Se rimane solo 1 opzione, rimuovi l'intero conflitto
+            if (newOptions.length <= 1) {
+              return null;
+            }
+            return { ...conflict, options: newOptions };
+          }
+          return conflict;
+        }).filter(Boolean);
+      });
+      
+      // Aggiorna anche le scelte
+      setSyncConflictChoices(prev => {
+        const current = prev[conflictId] || [];
+        return {
+          ...prev,
+          [conflictId]: current.filter(n => n !== name)
+        };
+      });
+      
+    } catch (error) {
+      console.error("Error ignoring name:", error);
+      toast.error("Errore nel salvare la preferenza");
+    }
+  };
+
   // Naviga alla cartella clinica del paziente
   const goToPatientFolder = (patientId) => {
     navigate(`/pazienti/${patientId}`);
