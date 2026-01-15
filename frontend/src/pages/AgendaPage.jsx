@@ -1406,72 +1406,122 @@ export default function AgendaPage() {
                       
                       {conflict.has_existing_patient && (
                         <p className="text-sm text-green-700 mb-3 bg-green-100 p-2 rounded">
-                          ⭐ Consigliato: usa il paziente già presente nel sistema
+                          ⭐ I pazienti già nel sistema sono pre-selezionati. Deseleziona quelli da unire.
                         </p>
                       )}
                       
-                      <RadioGroup 
-                        value={syncConflictChoices[conflict.id] || ""} 
-                        onValueChange={(value) => setSyncConflictChoices(prev => ({
-                          ...prev, 
-                          [conflict.id]: value
-                        }))}
-                        className="space-y-2"
-                      >
-                        {conflict.options.map((option, optIdx) => (
-                          <div key={optIdx} className={`flex items-start space-x-3 p-2 rounded transition-colors ${
-                            option.exists_in_db 
-                              ? "bg-green-100 border border-green-300 hover:bg-green-150" 
-                              : "hover:bg-amber-100"
-                          }`}>
-                            <RadioGroupItem value={option.name} id={`${conflict.id}-${optIdx}`} className="mt-1" />
-                            <Label htmlFor={`${conflict.id}-${optIdx}`} className="flex-1 cursor-pointer">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className={`font-semibold ${option.exists_in_db ? "text-green-900" : "text-gray-900"}`}>
-                                  {option.name}
-                                </span>
-                                {option.exists_in_db && (
-                                  <span className="px-2 py-0.5 bg-green-600 text-white text-xs rounded-full font-medium">
-                                    ✓ GIÀ NEL SISTEMA
-                                  </span>
-                                )}
-                                {option.source === "foglio" && !option.exists_in_db && (
-                                  <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">
-                                    dal foglio
-                                  </span>
-                                )}
-                                <span className="text-xs text-gray-500">
-                                  ({option.similarity}% simile)
-                                </span>
+                      <p className="text-sm text-gray-600 mb-2">
+                        Seleziona i pazienti da tenere come separati. Gli altri verranno uniti sotto il nome principale.
+                      </p>
+                      
+                      <div className="space-y-2">
+                        {conflict.options.map((option, optIdx) => {
+                          const isSelected = (syncConflictChoices[conflict.id] || []).includes(option.name);
+                          return (
+                            <div 
+                              key={optIdx} 
+                              className={`flex items-start space-x-3 p-2 rounded transition-colors cursor-pointer ${
+                                option.exists_in_db 
+                                  ? isSelected 
+                                    ? "bg-green-200 border-2 border-green-500" 
+                                    : "bg-green-50 border border-green-300 hover:bg-green-100"
+                                  : isSelected
+                                    ? "bg-blue-100 border-2 border-blue-500"
+                                    : "bg-gray-50 hover:bg-gray-100 border border-gray-200"
+                              }`}
+                              onClick={() => {
+                                setSyncConflictChoices(prev => {
+                                  const current = prev[conflict.id] || [];
+                                  if (current.includes(option.name)) {
+                                    // Deseleziona - ma deve rimanere almeno 1 selezionato
+                                    const newSelection = current.filter(n => n !== option.name);
+                                    return {
+                                      ...prev,
+                                      [conflict.id]: newSelection.length > 0 ? newSelection : current
+                                    };
+                                  } else {
+                                    // Seleziona
+                                    return {
+                                      ...prev,
+                                      [conflict.id]: [...current, option.name]
+                                    };
+                                  }
+                                });
+                              }}
+                            >
+                              <div className={`mt-1 w-5 h-5 rounded border-2 flex items-center justify-center ${
+                                isSelected 
+                                  ? "bg-blue-600 border-blue-600 text-white" 
+                                  : "border-gray-400 bg-white"
+                              }`}>
+                                {isSelected && <span className="text-xs font-bold">✓</span>}
                               </div>
-                              <div className="text-xs text-gray-500 mt-1">
-                                {option.occurrences > 0 && (
-                                  <span>{option.occurrences} appuntamenti nel foglio • </span>
-                                )}
-                                {option.dates.length > 0 && (
-                                  <span>Date: {option.dates.slice(0, 3).join(", ")}{option.dates.length > 3 ? "..." : ""}</span>
-                                )}
-                                {option.tipos?.length > 0 && (
-                                  <span> • Tipo: {option.tipos.join(", ")}</span>
-                                )}
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className={`font-semibold ${option.exists_in_db ? "text-green-900" : "text-gray-900"}`}>
+                                    {option.name}
+                                  </span>
+                                  {option.exists_in_db && (
+                                    <span className="px-2 py-0.5 bg-green-600 text-white text-xs rounded-full font-medium">
+                                      ✓ GIÀ NEL SISTEMA
+                                    </span>
+                                  )}
+                                  {option.source === "foglio" && !option.exists_in_db && (
+                                    <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">
+                                      dal foglio
+                                    </span>
+                                  )}
+                                  <span className="text-xs text-gray-500">
+                                    ({option.similarity}% simile)
+                                  </span>
+                                </div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                  {option.occurrences > 0 && (
+                                    <span>{option.occurrences} appuntamenti nel foglio • </span>
+                                  )}
+                                  {option.dates.length > 0 && (
+                                    <span>Date: {option.dates.slice(0, 3).join(", ")}{option.dates.length > 3 ? "..." : ""}</span>
+                                  )}
+                                  {option.tipos?.length > 0 && (
+                                    <span> • Tipo: {option.tipos.join(", ")}</span>
+                                  )}
+                                </div>
                               </div>
-                            </Label>
-                          </div>
-                        ))}
+                            </div>
+                          );
+                        })}
                         
-                        {/* Opzione per tenere tutti */}
-                        <div className="flex items-start space-x-3 p-2 rounded hover:bg-gray-100 transition-colors border-t border-gray-200 mt-2 pt-3">
-                          <RadioGroupItem value="KEEP_ALL" id={`${conflict.id}-keep-all`} className="mt-1" />
-                          <Label htmlFor={`${conflict.id}-keep-all`} className="flex-1 cursor-pointer">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-gray-700">Tieni tutti come pazienti separati</span>
-                            </div>
-                            <div className="text-xs text-gray-500 mt-1">
-                              Crea pazienti distinti per ogni nome (sono persone diverse)
-                            </div>
-                          </Label>
+                        {/* Pulsanti rapidi */}
+                        <div className="flex gap-2 mt-3 pt-2 border-t border-gray-200">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSyncConflictChoices(prev => ({
+                                ...prev,
+                                [conflict.id]: conflict.options.map(o => o.name)
+                              }));
+                            }}
+                          >
+                            Seleziona tutti
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              // Seleziona solo il primo (quello esistente o con più occorrenze)
+                              setSyncConflictChoices(prev => ({
+                                ...prev,
+                                [conflict.id]: [conflict.options[0]?.name].filter(Boolean)
+                              }));
+                            }}
+                          >
+                            Solo consigliato
+                          </Button>
                         </div>
-                      </RadioGroup>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1487,7 +1537,7 @@ export default function AgendaPage() {
                   </Button>
                   <Button 
                     onClick={() => handleGoogleSheetsSync()}
-                    disabled={syncLoading || syncConflicts.some(c => !syncConflictChoices[c.id])}
+                    disabled={syncLoading || syncConflicts.some(c => !(syncConflictChoices[c.id]?.length > 0))}
                     className="bg-blue-600 hover:bg-blue-700"
                   >
                     {syncLoading ? (
