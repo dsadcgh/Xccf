@@ -4842,6 +4842,17 @@ def calculate_similarity(name1: str, name2: str) -> float:
     nome1 = " ".join(parts1[1:]) if len(parts1) > 1 else ""
     nome2 = " ".join(parts2[1:]) if len(parts2) > 1 else ""
     
+    # CONTROLLO INIZIO COGNOME - Evita falsi positivi come "Briolotta" vs "Allotta"
+    # Se le prime 2-3 lettere sono completamente diverse, probabilmente sono persone diverse
+    prefix_len = min(3, len(cognome1), len(cognome2))
+    if prefix_len >= 2:
+        prefix1 = cognome1[:prefix_len].lower()
+        prefix2 = cognome2[:prefix_len].lower()
+        prefix_similarity = fuzz.ratio(prefix1, prefix2)
+        # Se l'inizio è molto diverso (< 50%), non sono la stessa persona
+        if prefix_similarity < 50:
+            return 0.0  # Nomi completamente diversi
+    
     # CASO SPECIALE: Se uno è solo cognome e l'altro ha cognome + nome
     # Es: "Schifano" vs "Schifano Vincenzo"
     if len(parts1) == 1 and len(parts2) > 1:
