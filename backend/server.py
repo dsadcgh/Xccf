@@ -5430,6 +5430,72 @@ async def analyze_google_sheets_sync(
         logger.error(f"Google Sheets analyze error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Errore nell'analisi: {str(e)}")
 
+# Endpoint per gestire i nomi ignorati nella sincronizzazione
+@api_router.post("/sync/ignored-names")
+async def add_ignored_name(data: dict, payload: dict = Depends(verify_token)):
+    """Aggiunge un nome alla lista dei nomi da ignorare nelle sincronizzazioni"""
+    ambulatorio = data.get("ambulatorio")
+    name = data.get("name")
+    dates = data.get("dates", [])
+    
+    if not ambulatorio or not name:
+        raise HTTPException(status_code=400, detail="Ambulatorio e nome sono richiesti")
+    
+    if ambulatorio not in payload["ambulatori"]:
+        raise HTTPException(status_code=403, detail="Non hai accesso a questo ambulatorio")
+    
+    # Controlla se il nome è già ignorato
+    existing = await db.ignored_sync_names.find_one({
+        "ambulatorio": ambulatorio,
+        "name": name
+    })
+    
+    if existing:
+        # Aggiorna le date se già esiste
+        await db.ignored_sync_names.update_one(
+            {"id": existing["id"]},
+            {"$addToSet": {"dates": {"$each": dates}}}
+        )
+        return {"success": True, "message": "Nome già ignorato, date aggiornate"}
+    
+    # Crea nuovo record
+    ignored_name = IgnoredSyncName(
+        ambulatorio=ambulatorio,
+        name=name,
+        dates=dates,
+        ignored_by=payload["sub"]
+    )
+    
+    await db.ignored_sync_names.insert_one(ignored_name.model_dump())
+    return {"success": True, "message": f"'{name}' non verrà più mostrato nei conflitti"}
+
+@api_router.get("/sync/ignored-names/{ambulatorio}")
+async def get_ignored_names(ambulatorio: str, payload: dict = Depends(verify_token)):
+    """Ottiene la lista dei nomi ignorati per un ambulatorio"""
+    if ambulatorio not in payload["ambulatori"]:
+        raise HTTPException(status_code=403, detail="Non hai accesso a questo ambulatorio")
+    
+    ignored = await db.ignored_sync_names.find(
+        {"ambulatorio": ambulatorio},
+        {"_id": 0}
+    ).to_list(None)
+    
+    return {"ignored_names": ignored}
+
+@api_router.delete("/sync/ignored-names/{ignored_id}")
+async def remove_ignored_name(ignored_id: str, payload: dict = Depends(verify_token)):
+    """Rimuove un nome dalla lista degli ignorati"""
+    ignored = await db.ignored_sync_names.find_one({"id": ignored_id})
+    
+    if not ignored:
+        raise HTTPException(status_code=404, detail="Nome ignorato non trovato")
+    
+    if ignored["ambulatorio"] not in payload["ambulatori"]:
+        raise HTTPException(status_code=403, detail="Non hai accesso a questo ambulatorio")
+    
+    await db.ignored_sync_names.delete_one({"id": ignored_id})
+    return {"success": True, "message": "Nome rimosso dalla lista ignorati"}
+
 # Include the router in the main app
 app.include_router(api_router)
 
