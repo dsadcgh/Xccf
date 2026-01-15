@@ -1639,6 +1639,19 @@ export default function AgendaPage() {
                   </Button>
                 </div>
               </div>
+              
+              {/* Mostra nomi che verranno ignorati */}
+              {pendingIgnoredNames.length > 0 && (
+                <div className="mt-3 p-2 bg-orange-50 border border-orange-200 rounded-lg">
+                  <p className="text-sm text-orange-700">
+                    <Ban className="w-4 h-4 inline mr-1" />
+                    {pendingIgnoredNames.length} nome/i verranno ignorati dopo la conferma:
+                    <span className="font-medium ml-1">
+                      {pendingIgnoredNames.map(p => p.name).join(", ")}
+                    </span>
+                  </p>
+                </div>
+              )}
             </>
           )}
 
