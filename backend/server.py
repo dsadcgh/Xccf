@@ -5351,6 +5351,9 @@ async def analyze_google_sheets_sync(
                 all_names_in_conflict = [full_name] + [s[0] for s in similar_results]
                 conflict_options = []
                 
+                # Flag per capire se c'è un paziente esistente nel database
+                has_existing_patient = any(name in existing_names for name in all_names_in_conflict)
+                
                 for name in all_names_in_conflict:
                     occ = name_occurrences.get(name, {"count": 0, "dates": set(), "tipo": set()})
                     exists_in_db = name in existing_names
@@ -5370,21 +5373,38 @@ async def analyze_google_sheets_sync(
                         "tipos": sorted(list(occ["tipo"])) if occ["tipo"] else [],
                         "exists_in_db": exists_in_db,
                         "similarity": round(similarity, 1),
-                        "source": source
+                        "source": source,
+                        "priority": "alta" if exists_in_db else "normale"
                     })
                 
                 # Ordina per: esistente nel DB > più occorrenze > similarità
                 conflict_options.sort(key=lambda x: (
-                    -int(x["exists_in_db"]),
+                    -int(x["exists_in_db"]),  # Pazienti nel DB sempre prima
                     -x["occurrences"],
                     -x["similarity"]
                 ))
                 
+                # Il paziente esistente ha sempre priorità come suggerimento
+                suggested = None
+                for opt in conflict_options:
+                    if opt["exists_in_db"]:
+                        suggested = opt["name"]
+                        break
+                if not suggested and conflict_options:
+                    suggested = conflict_options[0]["name"]
+                
+                # Motivo del conflitto più descrittivo
+                if has_existing_patient:
+                    reason = "Paziente già presente nel sistema - scegli quale nome usare"
+                else:
+                    reason = "Possibile errore di battitura o nomi simili"
+                
                 conflicts.append({
                     "id": str(uuid.uuid4()),
                     "options": conflict_options,
-                    "suggested": conflict_options[0]["name"] if conflict_options else None,
-                    "reason": "Possibile errore di battitura o duplicato"
+                    "suggested": suggested,
+                    "reason": reason,
+                    "has_existing_patient": has_existing_patient
                 })
         
         return {
