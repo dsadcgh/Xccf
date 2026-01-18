@@ -142,17 +142,89 @@ export default function AgendaPage() {
   const [syncStep, setSyncStep] = useState("initial"); // initial, conflicts, syncing
   const [pendingIgnoredNames, setPendingIgnoredNames] = useState([]); // Nomi da ignorare (salvati solo dopo conferma)
   const [nameAssociations, setNameAssociations] = useState({}); // Associazioni: nome_errato -> nome_corretto
+  const [wrongAssociations, setWrongAssociations] = useState({}); // Accostamenti errati: {conflictId_name: {action: 'keep'|'new'|'replace', replaceWith: patientId}}
   
   // Database scelte (nomi ignorati)
   const [ignoredNamesDialogOpen, setIgnoredNamesDialogOpen] = useState(false);
   const [ignoredNamesList, setIgnoredNamesList] = useState([]);
   const [loadingIgnoredNames, setLoadingIgnoredNames] = useState(false);
+  
+  // Backup e rollback
+  const [backupInfo, setBackupInfo] = useState(null);
+  const [loadingBackup, setLoadingBackup] = useState(false);
+  
+  // Ricerca pazienti per "Sostituisci con"
+  const [patientSearchQuery, setPatientSearchQuery] = useState("");
+  const [patientSearchResults, setPatientSearchResults] = useState([]);
+  const [allPatients, setAllPatients] = useState([]);
 
   const isVillaGinestre = ambulatorio === "villa_ginestre";
+
+  // Carica info backup
+  const loadBackupInfo = async () => {
+    try {
+      const response = await apiClient.get(`/sync/backup/${ambulatorio}`);
+      setBackupInfo(response.data);
+    } catch (error) {
+      console.error("Error loading backup info:", error);
+    }
+  };
+
+  // Annulla ultima sincronizzazione
+  const handleRollback = async () => {
+    if (!window.confirm("Sei sicuro di voler annullare l'ultima sincronizzazione? Tutti i dati verranno ripristinati allo stato precedente.")) {
+      return;
+    }
+    
+    setLoadingBackup(true);
+    try {
+      const response = await apiClient.post(`/sync/rollback/${ambulatorio}`);
+      toast.success(`Ripristinati ${response.data.restored_patients} pazienti e ${response.data.restored_appointments} appuntamenti`);
+      setBackupInfo(null);
+      fetchData();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Errore nel ripristino");
+    } finally {
+      setLoadingBackup(false);
+    }
+  };
+
+  // Svuota database scelte
+  const handleClearIgnoredNames = async () => {
+    if (!window.confirm("Sei sicuro di voler eliminare tutte le scelte salvate?")) {
+      return;
+    }
+    
+    try {
+      const response = await apiClient.delete(`/sync/ignored-names/clear/${ambulatorio}`);
+      toast.success(`Eliminate ${response.data.deleted_count} scelte`);
+      setIgnoredNamesList([]);
+    } catch (error) {
+      toast.error("Errore nell'eliminazione");
+    }
+  };
+
+  // Carica tutti i pazienti per la ricerca
+  const loadAllPatients = async () => {
+    try {
+      const response = await apiClient.get(`/patients?ambulatorio=${ambulatorio}`);
+      setAllPatients(response.data || []);
+    } catch (error) {
+      console.error("Error loading patients:", error);
+    }
+  };
+
+  // Filtra pazienti per ricerca
+  const filteredPatients = patientSearchQuery
+    ? allPatients.filter(p => 
+        `${p.cognome} ${p.nome}`.toLowerCase().includes(patientSearchQuery.toLowerCase())
+      )
+    : allPatients;
 
   // Analizza prima di sincronizzare
   const handleAnalyzeSync = async () => {
     setSyncAnalyzing(true);
+    loadAllPatients(); // Carica pazienti per la ricerca
     setSyncStep("analyzing");
     try {
       const response = await apiClient.post("/sync/google-sheets/analyze", {
