@@ -921,8 +921,51 @@ export default function AgendaPage() {
             <Database className="w-4 h-4 mr-2" />
             Database Scelte
           </Button>
+          <Button
+            variant="outline" 
+            size="sm" 
+            onClick={() => {
+              loadBackupInfo();
+            }}
+            className="ml-2 text-purple-600 border-purple-300 hover:bg-purple-50"
+            data-testid="rollback-btn"
+          >
+            <History className="w-4 h-4 mr-2" />
+            Annulla Sync
+          </Button>
         </div>
       </div>
+      
+      {/* Backup info banner */}
+      {backupInfo?.has_backup && (
+        <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <History className="w-5 h-5 text-purple-600" />
+            <div>
+              <p className="text-sm font-medium text-purple-800">
+                Backup disponibile del {new Date(backupInfo.created_at).toLocaleString('it-IT')}
+              </p>
+              <p className="text-xs text-purple-600">
+                {backupInfo.patients_count} pazienti, {backupInfo.appointments_count} appuntamenti
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-purple-600 border-purple-300 hover:bg-purple-100"
+            onClick={handleRollback}
+            disabled={loadingBackup}
+          >
+            {loadingBackup ? (
+              <RefreshCw className="w-4 h-4 mr-1 animate-spin" />
+            ) : (
+              <RotateCcw className="w-4 h-4 mr-1" />
+            )}
+            Ripristina
+          </Button>
+        </div>
+      )}
 
       {/* Holiday notice */}
       {holidayToday && (
