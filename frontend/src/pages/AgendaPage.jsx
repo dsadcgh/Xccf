@@ -1888,7 +1888,7 @@ export default function AgendaPage() {
                                                 <span className="text-xs text-gray-400 ml-1">({patient.tipo})</span>
                                               </div>
                                             ))}
-                                            {filteredPatients.length === 0 && (
+                                            {searchedPatients.length === 0 && (
                                               <div className="p-2 text-sm text-gray-500">Nessun paziente trovato</div>
                                             )}
                                           </div>
