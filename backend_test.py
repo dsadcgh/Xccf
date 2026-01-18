@@ -6,7 +6,7 @@ from datetime import datetime, date
 import json
 
 class AmbulatorioAPITester:
-    def __init__(self, base_url="https://careflow-pro.preview.emergentagent.com/api"):
+    def __init__(self, base_url="https://smart-agenda-sync.preview.emergentagent.com/api"):
         self.base_url = base_url
         self.token = None
         self.tests_run = 0
