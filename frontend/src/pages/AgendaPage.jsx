@@ -218,8 +218,8 @@ export default function AgendaPage() {
     }
   };
 
-  // Filtra pazienti per ricerca
-  const filteredPatients = patientSearchQuery
+  // Filtra pazienti per ricerca (per sezione "Sostituisci con")
+  const searchedPatients = patientSearchQuery
     ? allPatients.filter(p => 
         `${p.cognome} ${p.nome}`.toLowerCase().includes(patientSearchQuery.toLowerCase())
       )
