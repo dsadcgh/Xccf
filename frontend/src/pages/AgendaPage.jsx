@@ -47,6 +47,10 @@ import {
   UserCheck,
   Database,
   RotateCcw,
+  Trash2,
+  History,
+  UserCog,
+  Replace,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
