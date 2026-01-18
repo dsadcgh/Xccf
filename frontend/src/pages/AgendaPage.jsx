@@ -1864,7 +1864,7 @@ export default function AgendaPage() {
                                             onClick={(e) => e.stopPropagation()}
                                           />
                                           <div className="max-h-32 overflow-y-auto border rounded bg-white">
-                                            {filteredPatients.slice(0, 20).map(patient => (
+                                            {searchedPatients.slice(0, 20).map(patient => (
                                               <div
                                                 key={patient.id}
                                                 className={`p-2 text-sm cursor-pointer hover:bg-gray-100 ${
