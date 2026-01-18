@@ -792,29 +792,42 @@ export default function AIAssistant() {
 
               {/* Input */}
               <div className="p-3 border-t bg-gray-50">
-                {/* Pending Image Preview */}
-                {pendingImage && (
-                  <div className="mb-2 p-2 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-2">
-                    <Image className="w-4 h-4 text-blue-600" />
-                    <span className="text-xs text-blue-700 flex-1 truncate">{pendingImage.name}</span>
-                    {isExtracting ? (
-                      <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                    ) : (
-                      <>
-                        <button
-                          onClick={() => extractPatientsFromImage("PICC")}
-                          className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
-                        >
-                          Estrai
-                        </button>
-                        <button
-                          onClick={clearPendingImage}
-                          className="text-red-500 hover:text-red-700"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </>
-                    )}
+                {/* Pending Images Preview - Multiple files */}
+                {pendingImages.length > 0 && (
+                  <div className="mb-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-medium text-blue-700">
+                        📷 {pendingImages.length} immagine/i selezionata/e (max 5)
+                      </span>
+                      {isExtracting ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                      ) : (
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => extractPatientsFromImage("PICC")}
+                            className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                          >
+                            Estrai
+                          </button>
+                          <button
+                            onClick={clearPendingImages}
+                            className="text-red-500 hover:text-red-700 p-1"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {pendingImages.map((file, idx) => (
+                        <div key={idx} className="flex items-center gap-1 bg-white px-2 py-1 rounded text-xs text-blue-700 border border-blue-200">
+                          <span className="truncate max-w-[100px]">{file.name}</span>
+                          <button onClick={() => removePendingImage(idx)} className="text-red-400 hover:text-red-600">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
                 
@@ -839,7 +852,7 @@ export default function AIAssistant() {
                         Conferma MED
                       </button>
                       <button
-                        onClick={clearPendingImage}
+                        onClick={clearPendingImages}
                         className="text-xs px-2 py-1 text-red-600 hover:text-red-700"
                       >
                         Annulla
@@ -849,18 +862,19 @@ export default function AIAssistant() {
                 )}
                 
                 <div className="flex items-center gap-2">
-                  {/* Image Upload Button */}
+                  {/* Image Upload Button - Multiple files */}
                   <input
                     type="file"
                     ref={fileInputRef}
                     accept="image/*"
+                    multiple
                     onChange={handleImageSelect}
                     className="hidden"
                   />
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className={`p-2.5 rounded-full transition-colors ${pendingImage ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}
-                    title="Carica foto con nomi pazienti"
+                    className={`p-2.5 rounded-full transition-colors ${pendingImages.length > 0 ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}
+                    title="Carica foto con nomi pazienti (max 5)"
                     disabled={isExtracting}
                   >
                     <Image className="w-4 h-4" />
@@ -877,7 +891,7 @@ export default function AIAssistant() {
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder={isListening ? "Sto ascoltando..." : pendingImage ? "Scrivi 'aggiungi come PICC' o 'aggiungi come MED'..." : "Scrivi un messaggio..."}
+                    placeholder={isListening ? "Sto ascoltando..." : pendingImages.length > 0 ? "Scrivi 'aggiungi come PICC' o 'aggiungi come MED'..." : "Scrivi un messaggio..."}
                     className="flex-1 rounded-full border-gray-200 text-sm"
                     disabled={isLoading || isExtracting}
                     data-testid="ai-chat-input"
