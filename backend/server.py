@@ -5131,7 +5131,7 @@ async def sync_from_google_sheets(
     data: GoogleSheetsSyncRequest,
     payload: dict = Depends(verify_token)
 ):
-    """Sincronizza appuntamenti da TUTTI i fogli del Google Sheets"""
+    """Sincronizza SOLO NUOVI appuntamenti da Google Sheets - NON modifica appuntamenti esistenti"""
     if data.ambulatorio.value not in payload["ambulatori"]:
         raise HTTPException(status_code=403, detail="Non hai accesso a questo ambulatorio")
     
@@ -5159,7 +5159,7 @@ async def sync_from_google_sheets(
         await db.sync_backups.insert_one(backup)
         logger.info(f"Backup creato: {len(patients_backup)} pazienti, {len(appointments_backup)} appuntamenti")
         
-        # Scarica il foglio come XLSX (contiene tutti i fogli)
+        # Scarica il foglio come XLSX
         xlsx_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
         
         async with httpx.AsyncClient(follow_redirects=True) as http_client:
@@ -5167,22 +5167,12 @@ async def sync_from_google_sheets(
             if response.status_code != 200:
                 raise HTTPException(status_code=400, detail=f"Impossibile accedere al foglio Google (status {response.status_code}). Verifica che sia pubblico.")
         
-        xlsx_content = io.BytesIO(response.content)
-        
-        # Carica il workbook due volte:
-        # 1. Con data_only=True per valutare le formule
-        # 2. Senza data_only per leggere i colori
+        # Carica il workbook
         wb_data = load_workbook(io.BytesIO(response.content), data_only=True)
         wb_colors = load_workbook(io.BytesIO(response.content), data_only=False)
         
-        # NON cancellare gli appuntamenti manuali o modificati manualmente!
-        # Cancella solo gli appuntamenti importati da Google Sheets che NON sono stati modificati
-        if data.clear_existing:
-            await db.appointments.delete_many({
-                "ambulatorio": data.ambulatorio.value,
-                "note": "Importato da Google Sheets",
-                "manually_modified": {"$ne": True}  # Non cancellare appuntamenti modificati manualmente
-            })
+        # NON cancellare MAI gli appuntamenti esistenti - sincronizzazione SOLO additiva
+        # Rimossa la logica clear_existing
         
         # Parse tutti i fogli
         all_appointments = []
@@ -5193,7 +5183,6 @@ async def sync_from_google_sheets(
             ws_data = wb_data[sheet_name]
             ws_colors = wb_colors[sheet_name] if sheet_name in wb_colors.sheetnames else None
             
-            # Salta fogli vuoti o con pochi dati
             if ws_data.max_row < 7 or ws_data.max_column < 5:
                 continue
             
@@ -5204,124 +5193,119 @@ async def sync_from_google_sheets(
                 sheets_processed.append(sheet_name)
                 logger.info(f"Foglio '{sheet_name}': {len(appointments)} appuntamenti")
         
-        logger.info(f"Totale: {len(all_appointments)} appuntamenti da {len(sheets_processed)} fogli")
+        logger.info(f"Totale dal foglio: {len(all_appointments)} appuntamenti")
+        
+        # STEP 1: Ottieni TUTTI gli appuntamenti esistenti per escluderli
+        existing_appointments = await db.appointments.find(
+            {"ambulatorio": data.ambulatorio.value},
+            {"patient_id": 1, "data": 1, "ora": 1, "tipo": 1, "patient_cognome": 1, "patient_nome": 1, "_id": 0}
+        ).to_list(None)
+        
+        # Crea set di chiavi per appuntamenti esistenti
+        existing_apt_keys = set()
+        for apt in existing_appointments:
+            key = (
+                apt.get("patient_cognome", "").lower().strip(),
+                apt.get("patient_nome", "").lower().strip(),
+                apt.get("data", ""),
+                apt.get("ora", ""),
+                apt.get("tipo", "")
+            )
+            existing_apt_keys.add(key)
+        
+        # STEP 2: Filtra solo i NUOVI appuntamenti
+        new_appointments_to_process = []
+        for apt in all_appointments:
+            key = (
+                apt["cognome"].lower().strip(),
+                apt["nome"].lower().strip(),
+                apt["date"],
+                apt["ora"],
+                apt["tipo"]
+            )
+            if key not in existing_apt_keys:
+                new_appointments_to_process.append(apt)
+        
+        logger.info(f"Nuovi appuntamenti da importare: {len(new_appointments_to_process)}")
+        
+        # Se non ci sono nuovi appuntamenti, termina subito
+        if not new_appointments_to_process:
+            return {
+                "success": True,
+                "message": "Nessun nuovo appuntamento da importare. Il sistema è già aggiornato.",
+                "sheets_processed": sheets_processed,
+                "created_patients": 0,
+                "created_appointments": 0,
+                "skipped_appointments": len(all_appointments),
+                "total_parsed": len(all_appointments)
+            }
         
         # Applica correzioni nomi se fornite
         name_corrections = data.name_corrections or {}
         if name_corrections:
-            logger.info(f"Applicando {len(name_corrections)} correzioni nomi: {name_corrections}")
+            logger.info(f"Applicando {len(name_corrections)} correzioni nomi")
             
-            # Aggiorna i nomi negli appuntamenti
-            for apt in all_appointments:
+            for apt in new_appointments_to_process:
                 full_name = f"{apt['cognome']} {apt['nome']}".strip()
                 if full_name in name_corrections:
                     corrected = name_corrections[full_name]
                     parts = corrected.split(maxsplit=1)
-                    old_name = f"{apt['cognome']} {apt['nome']}"
                     apt['cognome'] = parts[0]
                     apt['nome'] = parts[1] if len(parts) > 1 else ""
-                    logger.info(f"Corretto appuntamento: '{old_name}' -> '{apt['cognome']} {apt['nome']}'")
-            
-            # Aggiorna il set dei pazienti
-            new_patients = set()
-            for cognome, nome in all_patients:
-                full_name = f"{cognome} {nome}".strip()
-                if full_name in name_corrections:
-                    corrected = name_corrections[full_name]
-                    parts = corrected.split(maxsplit=1)
-                    new_patients.add((parts[0], parts[1] if len(parts) > 1 else ""))
-                    logger.info(f"Corretto paziente: '{full_name}' -> '{corrected}'")
-                else:
-                    new_patients.add((cognome, nome))
-            all_patients = new_patients
+                    logger.info(f"Corretto: '{full_name}' -> '{apt['cognome']} {apt['nome']}'")
         
-        # Crea/trova pazienti e appuntamenti
+        # STEP 3: Estrai pazienti solo dai nuovi appuntamenti
+        new_patients = set()
+        for apt in new_appointments_to_process:
+            new_patients.add((apt["cognome"], apt["nome"]))
+        
+        # Crea/trova pazienti
         created_patients = 0
         created_appointments = 0
-        skipped_appointments = 0
+        skipped_appointments = len(all_appointments) - len(new_appointments_to_process)
         
-        patient_id_map = {}  # {(cognome, nome): patient_id}
+        patient_id_map = {}
         
-        for cognome, nome in all_patients:
-            # Cerca paziente esistente - PRIMA cerca match esatto, poi per cognome
+        for cognome, nome in new_patients:
+            # Cerca paziente esistente
             query = {"cognome": {"$regex": f"^{cognome}$", "$options": "i"}, "ambulatorio": data.ambulatorio.value}
             if nome:
                 query["nome"] = {"$regex": f"^{nome}$", "$options": "i"}
             
             existing = await db.patients.find_one(query, {"_id": 0})
             
-            # Se non trovato con match esatto e manca il nome, cerca solo per cognome
             if not existing and not nome:
-                # Cerca qualsiasi paziente con lo stesso cognome
                 cognome_query = {
                     "cognome": {"$regex": f"^{cognome}$", "$options": "i"}, 
                     "ambulatorio": data.ambulatorio.value
                 }
                 existing = await db.patients.find_one(cognome_query, {"_id": 0})
-                if existing:
-                    logger.info(f"Trovato paziente esistente per cognome: {cognome} -> {existing['cognome']} {existing.get('nome', '')}")
             
-            # Se non trovato e c'è un nome, prova a cercare senza il nome (solo cognome)
-            # per catturare casi come "Lo Mantia" nel foglio ma "La Mantia" nel DB
             if not existing and nome:
                 cognome_only_query = {
                     "cognome": {"$regex": f"^{cognome}$", "$options": "i"},
                     "ambulatorio": data.ambulatorio.value
                 }
                 existing = await db.patients.find_one(cognome_only_query, {"_id": 0})
-                if existing:
-                    logger.info(f"Trovato paziente esistente per cognome (nome ignorato): {cognome} {nome} -> {existing['cognome']} {existing.get('nome', '')}")
             
             if existing:
                 patient_id_map[(cognome, nome)] = existing["id"]
-                
-                # IMPORTANTE: Se il paziente è stato modificato manualmente, NON aggiornare il suo nome
-                # Usa sempre i dati del paziente esistente per gli appuntamenti
-                if existing.get('manually_modified'):
-                    logger.info(f"Paziente {existing['cognome']} {existing.get('nome', '')} modificato manualmente - NON sovrascrivere")
-                    # Aggiorna gli appuntamenti per usare il nome corretto dal DB
-                    for apt in all_appointments:
-                        if apt["cognome"].lower() == cognome.lower():
-                            if apt["nome"].lower() == nome.lower() or apt["nome"] == "":
-                                apt["cognome"] = existing["cognome"]
-                                apt["nome"] = existing.get("nome", "")
-                                logger.info(f"Appuntamento aggiornato con dati paziente manuale: {existing['cognome']} {existing.get('nome', '')}")
-                elif existing.get('nome') and not nome:
-                    # Se il paziente esistente ha un nome ma quello dal foglio no, usa il nome esistente
-                    for apt in all_appointments:
-                        if apt["cognome"].lower() == cognome.lower() and apt["nome"] == "":
+                # Aggiorna nomi negli appuntamenti se paziente modificato manualmente
+                if existing.get('manually_modified') or (existing.get('nome') and not nome):
+                    for apt in new_appointments_to_process:
+                        if apt["cognome"].lower() == cognome.lower() and apt["nome"].lower() == (nome or "").lower():
                             apt["cognome"] = existing["cognome"]
                             apt["nome"] = existing.get("nome", "")
-                            logger.info(f"Aggiornato nome appuntamento: {cognome} -> {existing['cognome']} {existing.get('nome', '')}")
             else:
-                # Crea nuovo paziente - ma prima verifica che non ci sia già uno simile modificato manualmente
-                similar_query = {
-                    "cognome": {"$regex": f"^{cognome[:3]}", "$options": "i"},
-                    "ambulatorio": data.ambulatorio.value,
-                    "manually_modified": True
-                }
-                similar_manual = await db.patients.find_one(similar_query, {"_id": 0})
-                
-                if similar_manual:
-                    # C'è un paziente simile modificato manualmente - usa quello
-                    patient_id_map[(cognome, nome)] = similar_manual["id"]
-                    logger.info(f"Trovato paziente manuale simile: {cognome} {nome} -> {similar_manual['cognome']} {similar_manual.get('nome', '')}")
-                    # Aggiorna gli appuntamenti
-                    for apt in all_appointments:
-                        if apt["cognome"].lower() == cognome.lower() and apt["nome"].lower() == (nome or "").lower():
-                            apt["cognome"] = similar_manual["cognome"]
-                            apt["nome"] = similar_manual.get("nome", "")
-                    continue
-                
                 # Crea nuovo paziente
                 new_patient_id = str(uuid.uuid4())
                 codice_paziente = generate_patient_code(nome or "X", cognome)
                 while await db.patients.find_one({"codice_paziente": codice_paziente}):
                     codice_paziente = generate_patient_code(nome or "X", cognome)
                 
-                # Determina tipo paziente basato sugli appuntamenti
+                # Determina tipo paziente
                 patient_tipos = set()
-                for apt in all_appointments:
+                for apt in new_appointments_to_process:
                     if apt["cognome"] == cognome and apt["nome"] == nome:
                         patient_tipos.add(apt["tipo"])
                 
@@ -5342,7 +5326,7 @@ async def sync_from_google_sheets(
                     "status": "in_cura",
                     "scheda_med_counter": 0,
                     "lesion_markers": [],
-                    "imported_from_sheets": True,  # Flag per indicare origine
+                    "imported_from_sheets": True,
                     "created_at": datetime.now(timezone.utc).isoformat(),
                     "updated_at": datetime.now(timezone.utc).isoformat()
                 }
@@ -5350,13 +5334,14 @@ async def sync_from_google_sheets(
                 patient_id_map[(cognome, nome)] = new_patient_id
                 created_patients += 1
         
-        # Crea appuntamenti
-        for apt in all_appointments:
+        # STEP 4: Crea SOLO i nuovi appuntamenti
+        for apt in new_appointments_to_process:
             patient_id = patient_id_map.get((apt["cognome"], apt["nome"]))
             if not patient_id:
+                skipped_appointments += 1
                 continue
             
-            # Verifica se esiste già un appuntamento per questo paziente in questo slot
+            # Verifica di nuovo che non esista (sicurezza extra)
             existing_apt = await db.appointments.find_one({
                 "patient_id": patient_id,
                 "data": apt["date"],
@@ -5365,59 +5350,24 @@ async def sync_from_google_sheets(
             })
             
             if existing_apt:
-                # Se l'appuntamento esistente è manuale (non da Google Sheets) O è stato modificato manualmente,
-                # NON sovrascrivere - preserva tutte le modifiche manuali
-                if existing_apt.get("note") != "Importato da Google Sheets" or existing_apt.get("manually_modified"):
-                    # Aggiorna solo lo stato "non presentato" se indicato dal foglio e non già impostato manualmente
-                    if apt.get("not_presented") and existing_apt.get("stato") == "da_fare":
-                        await db.appointments.update_one(
-                            {"id": existing_apt["id"]},
-                            {"$set": {"stato": "non_presentato"}}
-                        )
-                    skipped_appointments += 1
-                    continue
-                # Appuntamento importato da Google Sheets non modificato - salta senza modifiche
                 skipped_appointments += 1
                 continue
             
-            # Controlla il numero di slot per tipo in questo orario
-            # Normalmente max 3 PICC + 2 MED, ma se ci sono appuntamenti manuali, max 5 totali
-            slot_count_same_type = await db.appointments.count_documents({
+            # Verifica limiti slot
+            slot_count = await db.appointments.count_documents({
                 "ambulatorio": data.ambulatorio.value,
                 "data": apt["date"],
                 "ora": apt["ora"],
                 "tipo": apt["tipo"]
             })
             
-            # Conta appuntamenti manuali in questo slot
-            manual_count = await db.appointments.count_documents({
-                "ambulatorio": data.ambulatorio.value,
-                "data": apt["date"],
-                "ora": apt["ora"],
-                "note": {"$ne": "Importato da Google Sheets"}
-            })
-            
-            # Limiti normali: PICC=3, MED=2
             max_slots = 3 if apt["tipo"] == "PICC" else 2
-            
-            # Se ci sono appuntamenti manuali, permetti fino a 5 totali
-            if manual_count > 0:
-                total_count = await db.appointments.count_documents({
-                    "ambulatorio": data.ambulatorio.value,
-                    "data": apt["date"],
-                    "ora": apt["ora"]
-                })
-                if total_count >= 5:
-                    skipped_appointments += 1
-                    continue
-            elif slot_count_same_type >= max_slots:
+            if slot_count >= max_slots:
                 skipped_appointments += 1
                 continue
             
-            # Determina lo stato basandosi sul colore rosso (non presentato)
             stato = "non_presentato" if apt.get("not_presented") else "da_fare"
             
-            # Crea appuntamento
             new_apt = {
                 "id": str(uuid.uuid4()),
                 "patient_id": patient_id,
@@ -5431,6 +5381,7 @@ async def sync_from_google_sheets(
                 "note": "Importato da Google Sheets",
                 "stato": stato,
                 "completed": False,
+                "sync_timestamp": datetime.now(timezone.utc).isoformat(),
                 "created_at": datetime.now(timezone.utc).isoformat()
             }
             await db.appointments.insert_one(new_apt)
