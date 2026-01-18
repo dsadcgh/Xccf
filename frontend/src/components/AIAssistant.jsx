@@ -46,8 +46,8 @@ export default function AIAssistant() {
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   
-  // Image upload state
-  const [pendingImage, setPendingImage] = useState(null);
+  // Image upload state - now supports multiple files (up to 5)
+  const [pendingImages, setPendingImages] = useState([]);
   const [extractedPatients, setExtractedPatients] = useState([]);
   const [isExtracting, setIsExtracting] = useState(false);
   const fileInputRef = useRef(null);
