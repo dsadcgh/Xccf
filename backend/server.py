@@ -4588,24 +4588,32 @@ import openai
 async def extract_patients_from_image(
     ambulatorio: str = Form(...),
     tipo_default: str = Form("PICC"),
-    file: UploadFile = File(...),
+    file: UploadFile = File(None),
+    files: List[UploadFile] = File(None),
     payload: dict = Depends(verify_token)
 ):
-    """Extract patient names from an uploaded image using AI vision"""
+    """Extract patient names from uploaded images using AI vision - supports up to 5 files"""
     if ambulatorio not in payload["ambulatori"]:
         raise HTTPException(status_code=403, detail="Non hai accesso a questo ambulatorio")
+    
+    # Collect all files
+    all_files = []
+    if file:
+        all_files.append(file)
+    if files:
+        all_files.extend(files)
+    
+    if not all_files:
+        raise HTTPException(status_code=400, detail="Nessun file caricato")
+    
+    # Limit to 5 files
+    if len(all_files) > 5:
+        all_files = all_files[:5]
     
     try:
         api_key = os.environ.get('EMERGENT_LLM_KEY')
         if not api_key:
             raise HTTPException(status_code=500, detail="Chiave API non configurata")
-        
-        # Read and encode image
-        contents = await file.read()
-        image_base64 = base64.b64encode(contents).decode('utf-8')
-        
-        # Determine content type
-        content_type = file.content_type or "image/png"
         
         # Use OpenAI directly with vision capability
         client = openai.AsyncOpenAI(
@@ -4613,13 +4621,26 @@ async def extract_patients_from_image(
             base_url="https://integrations.emergentagent.com/llm/openai/v1"
         )
         
-        # Create the message with image
-        response = await client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "system",
-                    "content": """Sei un assistente che estrae nomi di pazienti da immagini di liste o elenchi.
+        all_patients = []
+        files_processed = 0
+        
+        # Process each file
+        for uploaded_file in all_files:
+            try:
+                # Read and encode image
+                contents = await uploaded_file.read()
+                image_base64 = base64.b64encode(contents).decode('utf-8')
+                
+                # Determine content type
+                content_type = uploaded_file.content_type or "image/png"
+                
+                # Create the message with image
+                response = await client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": """Sei un assistente che estrae nomi di pazienti da immagini di liste o elenchi.
 Analizza l'immagine e estrai TUTTI i nomi di persone che vedi nell'elenco.
 Restituisci SOLO un JSON valido nel formato:
 {
@@ -4633,69 +4654,76 @@ IMPORTANTE:
 - Il cognome va prima del nome
 - Non includere altro testo, solo il JSON
 Se non riesci a identificare nomi, restituisci: {"patients": [], "error": "Nessun nome identificato"}"""
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "Estrai tutti i nomi di persone (cognome e nome) da questa immagine. Restituisci solo il JSON con la lista completa dei pazienti."
                         },
                         {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:{content_type};base64,{image_base64}"
-                            }
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": "Estrai tutti i nomi di persone (cognome e nome) da questa immagine. Restituisci solo il JSON con la lista completa dei pazienti."
+                                },
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:{content_type};base64,{image_base64}"
+                                    }
+                                }
+                            ]
                         }
-                    ]
-                }
-            ],
-            max_tokens=4096
-        )
-        
-        response_text = response.choices[0].message.content
-        logger.info(f"AI Vision response: {response_text[:500]}")
-        
-        # Parse response
-        try:
-            # Try to find JSON in the response
-            # Handle markdown code blocks
-            if "```json" in response_text:
-                json_match = re.search(r'```json\s*(.*?)\s*```', response_text, re.DOTALL)
-                if json_match:
-                    result = json.loads(json_match.group(1))
-                else:
-                    result = json.loads(response_text.strip())
-            elif "```" in response_text:
-                json_match = re.search(r'```\s*(.*?)\s*```', response_text, re.DOTALL)
-                if json_match:
-                    result = json.loads(json_match.group(1))
-                else:
-                    result = json.loads(response_text.strip())
-            else:
-                # Try to find JSON object directly
-                json_match = re.search(r'\{.*"patients".*\}', response_text, re.DOTALL)
-                if json_match:
-                    result = json.loads(json_match.group())
-                else:
-                    result = json.loads(response_text.strip())
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON parse error: {e}, response: {response_text}")
-            result = {"patients": [], "raw_response": response_text, "error": str(e)}
-        
-        patients = result.get("patients", [])
-        
-        # Add default type to each patient
-        for p in patients:
-            if "tipo" not in p:
-                p["tipo"] = tipo_default
+                    ],
+                    max_tokens=4096
+                )
+                
+                response_text = response.choices[0].message.content
+                logger.info(f"AI Vision response for file {uploaded_file.filename}: {response_text[:300]}")
+                
+                # Parse response
+                try:
+                    # Try to find JSON in the response
+                    if "```json" in response_text:
+                        json_match = re.search(r'```json\s*(.*?)\s*```', response_text, re.DOTALL)
+                        if json_match:
+                            result = json.loads(json_match.group(1))
+                        else:
+                            result = json.loads(response_text.strip())
+                    elif "```" in response_text:
+                        json_match = re.search(r'```\s*(.*?)\s*```', response_text, re.DOTALL)
+                        if json_match:
+                            result = json.loads(json_match.group(1))
+                        else:
+                            result = json.loads(response_text.strip())
+                    else:
+                        json_match = re.search(r'\{.*"patients".*\}', response_text, re.DOTALL)
+                        if json_match:
+                            result = json.loads(json_match.group())
+                        else:
+                            result = json.loads(response_text.strip())
+                except json.JSONDecodeError as e:
+                    logger.error(f"JSON parse error: {e}, response: {response_text}")
+                    result = {"patients": []}
+                
+                patients = result.get("patients", [])
+                
+                # Add default type and source file to each patient
+                for p in patients:
+                    if "tipo" not in p:
+                        p["tipo"] = tipo_default
+                    p["source_file"] = uploaded_file.filename
+                
+                all_patients.extend(patients)
+                files_processed += 1
+                
+            except Exception as file_error:
+                logger.error(f"Error processing file {uploaded_file.filename}: {str(file_error)}")
+                continue
         
         return {
             "success": True,
-            "patients": patients,
-            "count": len(patients),
+            "patients": all_patients,
+            "count": len(all_patients),
+            "files_processed": files_processed,
             "tipo_default": tipo_default,
-            "message": f"Estratti {len(patients)} pazienti dall'immagine"
+            "message": f"Estratti {len(all_patients)} pazienti da {files_processed} file"
         }
         
     except Exception as e:
