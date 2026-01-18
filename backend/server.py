@@ -5657,6 +5657,106 @@ async def remove_ignored_name(ignored_id: str, payload: dict = Depends(verify_to
     await db.ignored_sync_names.delete_one({"id": ignored_id})
     return {"success": True, "message": "Nome rimosso dalla lista ignorati"}
 
+@api_router.delete("/sync/ignored-names/clear/{ambulatorio}")
+async def clear_all_ignored_names(ambulatorio: str, payload: dict = Depends(verify_token)):
+    """Svuota tutti i nomi ignorati per un ambulatorio"""
+    if ambulatorio not in payload["ambulatori"]:
+        raise HTTPException(status_code=403, detail="Non hai accesso a questo ambulatorio")
+    
+    result = await db.ignored_sync_names.delete_many({"ambulatorio": ambulatorio})
+    return {"success": True, "deleted_count": result.deleted_count, "message": f"Eliminati {result.deleted_count} nomi ignorati"}
+
+@api_router.post("/sync/backup")
+async def create_sync_backup(data: dict, payload: dict = Depends(verify_token)):
+    """Crea un backup prima della sincronizzazione"""
+    ambulatorio = data.get("ambulatorio")
+    
+    if not ambulatorio:
+        raise HTTPException(status_code=400, detail="Ambulatorio richiesto")
+    
+    if ambulatorio not in payload["ambulatori"]:
+        raise HTTPException(status_code=403, detail="Non hai accesso a questo ambulatorio")
+    
+    # Salva snapshot di pazienti e appuntamenti
+    patients = await db.patients.find({"ambulatorio": ambulatorio}, {"_id": 0}).to_list(None)
+    appointments = await db.appointments.find({"ambulatorio": ambulatorio}, {"_id": 0}).to_list(None)
+    
+    backup = {
+        "id": str(uuid.uuid4()),
+        "ambulatorio": ambulatorio,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": payload["sub"],
+        "patients_count": len(patients),
+        "appointments_count": len(appointments),
+        "patients": patients,
+        "appointments": appointments
+    }
+    
+    # Elimina backup precedenti (mantieni solo l'ultimo)
+    await db.sync_backups.delete_many({"ambulatorio": ambulatorio})
+    await db.sync_backups.insert_one(backup)
+    
+    return {
+        "success": True, 
+        "backup_id": backup["id"],
+        "patients_count": len(patients),
+        "appointments_count": len(appointments)
+    }
+
+@api_router.get("/sync/backup/{ambulatorio}")
+async def get_sync_backup(ambulatorio: str, payload: dict = Depends(verify_token)):
+    """Ottiene info sull'ultimo backup disponibile"""
+    if ambulatorio not in payload["ambulatori"]:
+        raise HTTPException(status_code=403, detail="Non hai accesso a questo ambulatorio")
+    
+    backup = await db.sync_backups.find_one(
+        {"ambulatorio": ambulatorio},
+        {"_id": 0, "patients": 0, "appointments": 0}  # Non ritornare tutti i dati
+    )
+    
+    if not backup:
+        return {"has_backup": False}
+    
+    return {
+        "has_backup": True,
+        "backup_id": backup["id"],
+        "created_at": backup["created_at"],
+        "created_by": backup["created_by"],
+        "patients_count": backup["patients_count"],
+        "appointments_count": backup["appointments_count"]
+    }
+
+@api_router.post("/sync/rollback/{ambulatorio}")
+async def rollback_sync(ambulatorio: str, payload: dict = Depends(verify_token)):
+    """Ripristina l'ultimo backup (annulla ultima sincronizzazione)"""
+    if ambulatorio not in payload["ambulatori"]:
+        raise HTTPException(status_code=403, detail="Non hai accesso a questo ambulatorio")
+    
+    backup = await db.sync_backups.find_one({"ambulatorio": ambulatorio})
+    
+    if not backup:
+        raise HTTPException(status_code=404, detail="Nessun backup disponibile")
+    
+    # Elimina pazienti e appuntamenti attuali
+    await db.patients.delete_many({"ambulatorio": ambulatorio})
+    await db.appointments.delete_many({"ambulatorio": ambulatorio})
+    
+    # Ripristina dal backup
+    if backup["patients"]:
+        await db.patients.insert_many(backup["patients"])
+    if backup["appointments"]:
+        await db.appointments.insert_many(backup["appointments"])
+    
+    # Elimina il backup usato
+    await db.sync_backups.delete_one({"id": backup["id"]})
+    
+    return {
+        "success": True,
+        "restored_patients": backup["patients_count"],
+        "restored_appointments": backup["appointments_count"],
+        "message": "Sincronizzazione annullata, dati ripristinati"
+    }
+
 # Include the router in the main app
 app.include_router(api_router)
 
