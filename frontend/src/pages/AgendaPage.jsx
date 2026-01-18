@@ -1760,6 +1760,154 @@ export default function AgendaPage() {
                                 )}
                               </Button>
                               
+                              {/* Pulsante Accostamento Errato */}
+                              <Button
+                                type="button"
+                                variant={wrongAssociations[`${conflict.id}_${option.name}`] ? "default" : "ghost"}
+                                size="sm"
+                                className={`ml-1 text-xs shrink-0 ${
+                                  wrongAssociations[`${conflict.id}_${option.name}`]
+                                    ? "bg-red-500 hover:bg-red-600 text-white"
+                                    : "text-red-600 hover:text-red-700 hover:bg-red-50"
+                                }`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const key = `${conflict.id}_${option.name}`;
+                                  setWrongAssociations(prev => {
+                                    if (prev[key]) {
+                                      const newState = {...prev};
+                                      delete newState[key];
+                                      return newState;
+                                    }
+                                    return {...prev, [key]: { action: 'keep', expanded: true }};
+                                  });
+                                }}
+                              >
+                                <UserCog className="w-3 h-3 mr-1" />
+                                {wrongAssociations[`${conflict.id}_${option.name}`] ? "Chiudi" : "Gestisci"}
+                              </Button>
+                            </div>
+                            
+                            {/* Sezione Accostamento Errato espansa */}
+                            {wrongAssociations[`${conflict.id}_${option.name}`]?.expanded && (
+                              <div className="ml-8 mt-2 p-3 bg-red-50 border border-red-200 rounded-lg" onClick={(e) => e.stopPropagation()}>
+                                <p className="text-sm font-medium text-red-800 mb-2">Cosa vuoi fare con "{option.name}"?</p>
+                                
+                                <div className="space-y-2">
+                                  {/* Opzione 1: Mantieni questo */}
+                                  <label className={`flex items-center gap-2 p-2 rounded cursor-pointer ${
+                                    wrongAssociations[`${conflict.id}_${option.name}`]?.action === 'keep' 
+                                      ? 'bg-white border-2 border-blue-500' 
+                                      : 'bg-white border border-gray-200 hover:border-gray-300'
+                                  }`}>
+                                    <input
+                                      type="radio"
+                                      name={`wrong_${conflict.id}_${option.name}`}
+                                      checked={wrongAssociations[`${conflict.id}_${option.name}`]?.action === 'keep'}
+                                      onChange={() => setWrongAssociations(prev => ({
+                                        ...prev,
+                                        [`${conflict.id}_${option.name}`]: { ...prev[`${conflict.id}_${option.name}`], action: 'keep' }
+                                      }))}
+                                    />
+                                    <span className="text-sm">Mantieni "{option.name}" come nome</span>
+                                  </label>
+                                  
+                                  {/* Opzione 2: Crea nuovo paziente */}
+                                  <label className={`flex items-center gap-2 p-2 rounded cursor-pointer ${
+                                    wrongAssociations[`${conflict.id}_${option.name}`]?.action === 'new' 
+                                      ? 'bg-white border-2 border-blue-500' 
+                                      : 'bg-white border border-gray-200 hover:border-gray-300'
+                                  }`}>
+                                    <input
+                                      type="radio"
+                                      name={`wrong_${conflict.id}_${option.name}`}
+                                      checked={wrongAssociations[`${conflict.id}_${option.name}`]?.action === 'new'}
+                                      onChange={() => setWrongAssociations(prev => ({
+                                        ...prev,
+                                        [`${conflict.id}_${option.name}`]: { ...prev[`${conflict.id}_${option.name}`], action: 'new' }
+                                      }))}
+                                    />
+                                    <UserPlus className="w-4 h-4 text-green-600" />
+                                    <span className="text-sm">Crea nuovo paziente con questo nome</span>
+                                  </label>
+                                  
+                                  {/* Opzione 3: Sostituisci con paziente esistente */}
+                                  <label className={`flex items-start gap-2 p-2 rounded cursor-pointer ${
+                                    wrongAssociations[`${conflict.id}_${option.name}`]?.action === 'replace' 
+                                      ? 'bg-white border-2 border-blue-500' 
+                                      : 'bg-white border border-gray-200 hover:border-gray-300'
+                                  }`}>
+                                    <input
+                                      type="radio"
+                                      name={`wrong_${conflict.id}_${option.name}`}
+                                      checked={wrongAssociations[`${conflict.id}_${option.name}`]?.action === 'replace'}
+                                      onChange={() => setWrongAssociations(prev => ({
+                                        ...prev,
+                                        [`${conflict.id}_${option.name}`]: { ...prev[`${conflict.id}_${option.name}`], action: 'replace' }
+                                      }))}
+                                      className="mt-1"
+                                    />
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-1">
+                                        <Replace className="w-4 h-4 text-purple-600" />
+                                        <span className="text-sm">Sostituisci con paziente esistente</span>
+                                      </div>
+                                      
+                                      {wrongAssociations[`${conflict.id}_${option.name}`]?.action === 'replace' && (
+                                        <div className="mt-2">
+                                          <input
+                                            type="text"
+                                            placeholder="Cerca paziente..."
+                                            className="w-full text-sm border rounded px-2 py-1 mb-2"
+                                            value={patientSearchQuery}
+                                            onChange={(e) => setPatientSearchQuery(e.target.value)}
+                                            onClick={(e) => e.stopPropagation()}
+                                          />
+                                          <div className="max-h-32 overflow-y-auto border rounded bg-white">
+                                            {filteredPatients.slice(0, 20).map(patient => (
+                                              <div
+                                                key={patient.id}
+                                                className={`p-2 text-sm cursor-pointer hover:bg-gray-100 ${
+                                                  wrongAssociations[`${conflict.id}_${option.name}`]?.replaceWith === patient.id
+                                                    ? 'bg-purple-100 border-l-2 border-purple-500'
+                                                    : ''
+                                                }`}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setWrongAssociations(prev => ({
+                                                    ...prev,
+                                                    [`${conflict.id}_${option.name}`]: {
+                                                      ...prev[`${conflict.id}_${option.name}`],
+                                                      replaceWith: patient.id,
+                                                      replaceWithName: `${patient.cognome} ${patient.nome || ''}`.trim()
+                                                    }
+                                                  }));
+                                                }}
+                                              >
+                                                {patient.cognome} {patient.nome || ''} 
+                                                <span className="text-xs text-gray-400 ml-1">({patient.tipo})</span>
+                                              </div>
+                                            ))}
+                                            {filteredPatients.length === 0 && (
+                                              <div className="p-2 text-sm text-gray-500">Nessun paziente trovato</div>
+                                            )}
+                                          </div>
+                                          {wrongAssociations[`${conflict.id}_${option.name}`]?.replaceWithName && (
+                                            <p className="text-xs text-purple-600 mt-1">
+                                              Selezionato: {wrongAssociations[`${conflict.id}_${option.name}`]?.replaceWithName}
+                                            </p>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </label>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                              
                               {/* Selettore associazione se non selezionato e ci sono 2+ selezionati */}
                               {!isSelected && (syncConflictChoices[conflict.id] || []).length >= 2 && (
                                 <div className="ml-2 flex items-center gap-1">
