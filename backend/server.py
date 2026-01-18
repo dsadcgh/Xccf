@@ -5111,6 +5111,26 @@ async def sync_from_google_sheets(
     year = data.year
     
     try:
+        # CREA BACKUP AUTOMATICO prima di sincronizzare
+        patients_backup = await db.patients.find({"ambulatorio": data.ambulatorio.value}, {"_id": 0}).to_list(None)
+        appointments_backup = await db.appointments.find({"ambulatorio": data.ambulatorio.value}, {"_id": 0}).to_list(None)
+        
+        backup = {
+            "id": str(uuid.uuid4()),
+            "ambulatorio": data.ambulatorio.value,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_by": payload["sub"],
+            "patients_count": len(patients_backup),
+            "appointments_count": len(appointments_backup),
+            "patients": patients_backup,
+            "appointments": appointments_backup
+        }
+        
+        # Elimina backup precedenti e salva il nuovo
+        await db.sync_backups.delete_many({"ambulatorio": data.ambulatorio.value})
+        await db.sync_backups.insert_one(backup)
+        logger.info(f"Backup creato: {len(patients_backup)} pazienti, {len(appointments_backup)} appuntamenti")
+        
         # Scarica il foglio come XLSX (contiene tutti i fogli)
         xlsx_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
         
