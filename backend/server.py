@@ -5611,6 +5611,14 @@ async def analyze_google_sheets_sync(
             if full_name in processed_names:
                 continue
             
+            # IMPORTANTE: Se il COGNOME esiste già nel DB, NON è un conflitto
+            # Il paziente verrà associato automaticamente durante la sync
+            cognome_lower = cognome.lower().strip()
+            if cognome_lower in existing_cognomes_lower:
+                processed_names.add(full_name)
+                logger.info(f"Skip conflitto - cognome '{cognome}' già nel DB")
+                continue
+            
             # Cerca nomi simili SOLO tra:
             # 1. Altri nuovi nomi dal foglio
             # 2. Nomi esistenti nel DB (per suggerire associazione)
