@@ -5408,7 +5408,15 @@ async def analyze_google_sheets_sync(
     data: GoogleSheetsSyncPreview,
     payload: dict = Depends(verify_token)
 ):
-    """Analizza i dati da Google Sheets - SOLO nuovi appuntamenti non ancora presenti nel sistema"""
+    """
+    Analizza i dati da Google Sheets - SINCRONIZZAZIONE INCREMENTALE
+    
+    Logica:
+    1. Prende TUTTI gli appuntamenti dal foglio Google
+    2. ESCLUDE gli appuntamenti che esistono già nel sistema (per data+ora+tipo+paziente_simile)
+    3. Per i NUOVI appuntamenti, se il paziente esiste già nel DB → associa direttamente
+    4. Mostra conflitti SOLO per nomi NUOVI che non esistono nel DB e sono simili ad altri
+    """
     if data.ambulatorio.value not in payload["ambulatori"]:
         raise HTTPException(status_code=403, detail="Non hai accesso a questo ambulatorio")
     
@@ -5416,9 +5424,8 @@ async def analyze_google_sheets_sync(
     year = data.year
     
     try:
-        # STEP 1: Resetta il database scelte all'inizio di ogni nuova analisi
-        await db.ignored_sync_names.delete_many({"ambulatorio": data.ambulatorio.value})
-        logger.info(f"Database scelte resettato per {data.ambulatorio.value}")
+        # NON resettare il database scelte - mantieni le scelte precedenti
+        # await db.ignored_sync_names.delete_many({"ambulatorio": data.ambulatorio.value})
         
         # Scarica il foglio come XLSX
         xlsx_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
@@ -5428,7 +5435,6 @@ async def analyze_google_sheets_sync(
             if response.status_code != 200:
                 raise HTTPException(status_code=400, detail="Impossibile accedere al foglio Google")
         
-        # Carica workbook per dati e colori
         wb_data = load_workbook(io.BytesIO(response.content), data_only=True)
         wb_colors = load_workbook(io.BytesIO(response.content), data_only=False)
         
@@ -5450,43 +5456,73 @@ async def analyze_google_sheets_sync(
                 all_patients.update(patients)
                 sheets_processed.append(sheet_name)
         
-        # STEP 2: Ottieni TUTTI gli appuntamenti esistenti nel sistema
-        existing_appointments = await db.appointments.find(
+        logger.info(f"Totale appuntamenti dal foglio: {len(all_appointments)}")
+        
+        # STEP 1: Ottieni TUTTI i pazienti esistenti nel sistema
+        existing_patients_list = await db.patients.find(
             {"ambulatorio": data.ambulatorio.value},
-            {"patient_id": 1, "data": 1, "ora": 1, "tipo": 1, "patient_cognome": 1, "patient_nome": 1, "_id": 0}
+            {"id": 1, "cognome": 1, "nome": 1, "_id": 0}
         ).to_list(None)
         
-        # Crea un set di appuntamenti esistenti per confronto veloce
-        # Chiave: (cognome_lower, nome_lower, data, ora, tipo)
+        # Crea dizionario per lookup veloce: nome_lower -> patient_id
+        existing_patients_map = {}
+        for p in existing_patients_list:
+            key = f"{p['cognome']} {p.get('nome', '')}".lower().strip()
+            existing_patients_map[key] = p["id"]
+            # Aggiungi anche solo cognome per match parziali
+            cognome_key = p['cognome'].lower().strip()
+            if cognome_key not in existing_patients_map:
+                existing_patients_map[cognome_key] = p["id"]
+        
+        existing_names = set(f"{p['cognome']} {p.get('nome', '')}".strip() for p in existing_patients_list)
+        existing_names_lower = set(n.lower() for n in existing_names)
+        
+        logger.info(f"Pazienti esistenti nel sistema: {len(existing_patients_list)}")
+        
+        # STEP 2: Ottieni TUTTI gli appuntamenti esistenti
+        existing_appointments = await db.appointments.find(
+            {"ambulatorio": data.ambulatorio.value},
+            {"patient_id": 1, "data": 1, "ora": 1, "tipo": 1, "_id": 0}
+        ).to_list(None)
+        
+        # Crea set di (patient_id, data, ora) per verificare appuntamenti esistenti
         existing_apt_keys = set()
         for apt in existing_appointments:
-            key = (
-                apt.get("patient_cognome", "").lower().strip(),
-                apt.get("patient_nome", "").lower().strip(),
-                apt.get("data", ""),
-                apt.get("ora", ""),
-                apt.get("tipo", "")
-            )
+            key = (apt.get("patient_id"), apt.get("data"), apt.get("ora"))
             existing_apt_keys.add(key)
         
         logger.info(f"Appuntamenti esistenti nel sistema: {len(existing_apt_keys)}")
         
-        # STEP 3: Filtra SOLO gli appuntamenti NUOVI (non presenti nel sistema)
+        # STEP 3: Filtra appuntamenti - tieni SOLO quelli VERAMENTE nuovi
         new_appointments = []
+        
         for apt in all_appointments:
-            key = (
-                apt["cognome"].lower().strip(),
-                apt["nome"].lower().strip(),
-                apt["date"],
-                apt["ora"],
-                apt["tipo"]
-            )
-            if key not in existing_apt_keys:
+            full_name = f"{apt['cognome']} {apt['nome']}".strip()
+            full_name_lower = full_name.lower()
+            
+            # Cerca se il paziente esiste già (match esatto o per cognome)
+            patient_id = existing_patients_map.get(full_name_lower)
+            if not patient_id:
+                # Prova solo con il cognome
+                patient_id = existing_patients_map.get(apt['cognome'].lower().strip())
+            
+            if patient_id:
+                # Paziente esiste - verifica se l'appuntamento esiste già
+                apt_key = (patient_id, apt["date"], apt["ora"])
+                if apt_key in existing_apt_keys:
+                    # Appuntamento già esistente - SKIP
+                    continue
+                else:
+                    # Paziente esiste ma appuntamento nuovo - aggiungi senza conflitto
+                    apt["_matched_patient_id"] = patient_id
+                    new_appointments.append(apt)
+            else:
+                # Paziente NON esiste - questo potrebbe essere un conflitto
                 new_appointments.append(apt)
         
-        logger.info(f"Nuovi appuntamenti da processare: {len(new_appointments)} su {len(all_appointments)} totali")
+        logger.info(f"Nuovi appuntamenti da processare: {len(new_appointments)}")
         
-        # Se non ci sono nuovi appuntamenti, ritorna subito
+        # Se non ci sono nuovi appuntamenti
         if not new_appointments:
             return {
                 "success": True,
@@ -5495,83 +5531,72 @@ async def analyze_google_sheets_sync(
                 "total_appointments": 0,
                 "conflicts": [],
                 "has_conflicts": False,
-                "existing_patients_count": len(existing_appointments),
+                "existing_patients_count": len(existing_patients_list),
                 "message": "Nessun nuovo appuntamento da importare. Il sistema è già aggiornato."
             }
         
-        # STEP 4: Estrai solo i pazienti dei NUOVI appuntamenti
-        new_patients = set()
+        # STEP 4: Trova nomi dei NUOVI pazienti (quelli senza match nel DB)
+        new_patient_names = set()
         for apt in new_appointments:
-            new_patients.add((apt["cognome"], apt["nome"]))
+            if "_matched_patient_id" not in apt:
+                # Questo paziente non esiste nel DB
+                new_patient_names.add((apt["cognome"], apt["nome"]))
         
-        # Ottieni nomi esistenti dal database
-        existing_patients = await db.patients.find(
-            {"ambulatorio": data.ambulatorio.value},
-            {"cognome": 1, "nome": 1, "_id": 0}
-        ).to_list(None)
-        existing_names = set(f"{p['cognome']} {p.get('nome', '')}".strip() for p in existing_patients)
+        logger.info(f"Nuovi pazienti (non nel DB): {len(new_patient_names)}")
         
-        # Crea set di nomi solo dai NUOVI appuntamenti
-        sheet_names = set(f"{cognome} {nome}".strip() for cognome, nome in new_patients)
-        
-        # Conta occorrenze e date per ogni nome (solo nei NUOVI appuntamenti)
-        name_occurrences = {}
-        for apt in new_appointments:
-            full_name = f"{apt['cognome']} {apt['nome']}".strip()
-            if full_name not in name_occurrences:
-                name_occurrences[full_name] = {"count": 0, "dates": set(), "tipo": set()}
-            name_occurrences[full_name]["count"] += 1
-            name_occurrences[full_name]["dates"].add(apt["date"])
-            name_occurrences[full_name]["tipo"].add(apt["tipo"])
-        
-        # STEP 5: Trova potenziali errori di battitura SOLO tra i nuovi nomi
+        # STEP 5: Cerca conflitti SOLO tra i nuovi nomi
         conflicts = []
         processed_names = set()
         
-        for cognome, nome in new_patients:
+        # Conta occorrenze per i nuovi nomi
+        name_occurrences = {}
+        for apt in new_appointments:
+            if "_matched_patient_id" not in apt:
+                full_name = f"{apt['cognome']} {apt['nome']}".strip()
+                if full_name not in name_occurrences:
+                    name_occurrences[full_name] = {"count": 0, "dates": set(), "tipo": set()}
+                name_occurrences[full_name]["count"] += 1
+                name_occurrences[full_name]["dates"].add(apt["date"])
+                name_occurrences[full_name]["tipo"].add(apt["tipo"])
+        
+        sheet_names_new = set(f"{c} {n}".strip() for c, n in new_patient_names)
+        
+        for cognome, nome in new_patient_names:
             full_name = f"{cognome} {nome}".strip()
             
             if full_name in processed_names:
                 continue
             
-            # Se il nome esiste già nel database, salta - è un paziente confermato
-            if full_name in existing_names:
-                processed_names.add(full_name)
-                continue
-            
-            # Cerca nomi simili
-            similar_results = find_similar_names(full_name, existing_names, sheet_names)
+            # Cerca nomi simili SOLO tra:
+            # 1. Altri nuovi nomi dal foglio
+            # 2. Nomi esistenti nel DB (per suggerire associazione)
+            similar_results = find_similar_names(full_name, existing_names, sheet_names_new)
             
             if similar_results:
-                # Marca tutti i nomi coinvolti come processati
                 processed_names.add(full_name)
                 for sim_name, _, _ in similar_results:
                     processed_names.add(sim_name)
                 
-                # Raccogli info per tutti i nomi coinvolti
                 all_names_in_conflict = [full_name] + [s[0] for s in similar_results]
                 conflict_options = []
                 
-                # Conta quanti nomi NON sono nel database
-                names_not_in_db = [name for name in all_names_in_conflict if name not in existing_names]
-                names_in_db = [name for name in all_names_in_conflict if name in existing_names]
+                # Conta quanti sono nel DB vs nuovi
+                names_in_db = [n for n in all_names_in_conflict if n.lower() in existing_names_lower]
+                names_new = [n for n in all_names_in_conflict if n.lower() not in existing_names_lower]
                 
-                # Se TUTTI i nomi sono già nel database, skip
-                if len(names_not_in_db) == 0:
+                # Se tutti i nomi sono già nel DB, skip (paziente già confermati separati)
+                if len(names_new) == 0:
                     continue
                 
-                has_existing_patient = len(names_in_db) > 0
+                has_existing = len(names_in_db) > 0
                 
                 for name in all_names_in_conflict:
                     occ = name_occurrences.get(name, {"count": 0, "dates": set(), "tipo": set()})
-                    exists_in_db = name in existing_names
+                    exists_in_db = name.lower() in existing_names_lower
                     
                     similarity = 100 if name == full_name else next(
                         (s[1] for s in similar_results if s[0] == name), 0
                     )
-                    source = "database" if exists_in_db else "foglio"
-                    if name != full_name:
-                        source = next((s[2] for s in similar_results if s[0] == name), source)
                     
                     conflict_options.append({
                         "name": name,
@@ -5580,51 +5605,37 @@ async def analyze_google_sheets_sync(
                         "tipos": sorted(list(occ["tipo"])) if occ["tipo"] else [],
                         "exists_in_db": exists_in_db,
                         "similarity": round(similarity, 1),
-                        "source": source,
+                        "source": "database" if exists_in_db else "foglio",
                         "priority": "alta" if exists_in_db else "normale"
                     })
                 
-                # Ordina per: esistente nel DB > più occorrenze > similarità
-                conflict_options.sort(key=lambda x: (
-                    -int(x["exists_in_db"]),
-                    -x["occurrences"],
-                    -x["similarity"]
-                ))
+                conflict_options.sort(key=lambda x: (-int(x["exists_in_db"]), -x["occurrences"], -x["similarity"]))
                 
-                suggested = None
-                for opt in conflict_options:
-                    if opt["exists_in_db"]:
-                        suggested = opt["name"]
-                        break
-                if not suggested and conflict_options:
-                    suggested = conflict_options[0]["name"]
-                
-                if has_existing_patient:
-                    reason = "Paziente già presente nel sistema - scegli quale nome usare"
-                else:
-                    reason = "Possibile errore di battitura o nomi simili"
+                suggested = next((opt["name"] for opt in conflict_options if opt["exists_in_db"]), conflict_options[0]["name"] if conflict_options else None)
                 
                 conflicts.append({
                     "id": str(uuid.uuid4()),
                     "options": conflict_options,
                     "suggested": suggested,
-                    "reason": reason,
-                    "has_existing_patient": has_existing_patient
+                    "reason": "Paziente già presente nel sistema - scegli quale nome usare" if has_existing else "Possibile errore di battitura o nomi simili",
+                    "has_existing_patient": has_existing
                 })
         
         return {
             "success": True,
             "sheets_processed": sheets_processed,
-            "total_patients": len(new_patients),
+            "total_patients": len(new_patient_names),
             "total_appointments": len(new_appointments),
             "conflicts": conflicts,
             "has_conflicts": len(conflicts) > 0,
-            "existing_patients_count": len(existing_names),
-            "message": f"Trovati {len(new_appointments)} nuovi appuntamenti da importare"
+            "existing_patients_count": len(existing_patients_list),
+            "message": f"Trovati {len(new_appointments)} nuovi appuntamenti da importare" + (f" ({len(conflicts)} conflitti da risolvere)" if conflicts else "")
         }
         
     except Exception as e:
         logger.error(f"Google Sheets analyze error: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Errore nell'analisi: {str(e)}")
 
 # Endpoint per gestire i nomi ignorati nella sincronizzazione
