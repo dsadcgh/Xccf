@@ -5464,18 +5464,30 @@ async def analyze_google_sheets_sync(
             {"id": 1, "cognome": 1, "nome": 1, "_id": 0}
         ).to_list(None)
         
-        # Crea dizionario per lookup veloce: nome_lower -> patient_id
-        existing_patients_map = {}
+        # Crea dizionari per lookup veloce
+        # existing_patients_by_fullname: "cognome nome" -> patient_id
+        # existing_patients_by_cognome: "cognome" -> [patient_ids]
+        existing_patients_by_fullname = {}
+        existing_patients_by_cognome = {}
+        
         for p in existing_patients_list:
-            key = f"{p['cognome']} {p.get('nome', '')}".lower().strip()
-            existing_patients_map[key] = p["id"]
-            # Aggiungi anche solo cognome per match parziali
-            cognome_key = p['cognome'].lower().strip()
-            if cognome_key not in existing_patients_map:
-                existing_patients_map[cognome_key] = p["id"]
+            pid = p["id"]
+            cognome = p['cognome'].lower().strip()
+            nome = p.get('nome', '').lower().strip()
+            
+            # Chiave nome completo
+            full_key = f"{cognome} {nome}".strip()
+            existing_patients_by_fullname[full_key] = pid
+            
+            # Chiave solo cognome (lista per gestire omonimi)
+            if cognome not in existing_patients_by_cognome:
+                existing_patients_by_cognome[cognome] = []
+            existing_patients_by_cognome[cognome].append({"id": pid, "nome": nome, "cognome_orig": p['cognome'], "nome_orig": p.get('nome', '')})
         
         existing_names = set(f"{p['cognome']} {p.get('nome', '')}".strip() for p in existing_patients_list)
         existing_names_lower = set(n.lower() for n in existing_names)
+        # Aggiungi anche solo i cognomi per match
+        existing_cognomes_lower = set(p['cognome'].lower().strip() for p in existing_patients_list)
         
         logger.info(f"Pazienti esistenti nel sistema: {len(existing_patients_list)}")
         
@@ -5493,29 +5505,61 @@ async def analyze_google_sheets_sync(
         
         logger.info(f"Appuntamenti esistenti nel sistema: {len(existing_apt_keys)}")
         
+        # Funzione helper per trovare paziente esistente
+        def find_existing_patient(cognome_sheet, nome_sheet):
+            """Cerca un paziente esistente con logica intelligente"""
+            cognome_lower = cognome_sheet.lower().strip()
+            nome_lower = nome_sheet.lower().strip() if nome_sheet else ""
+            
+            # 1. Prova match esatto nome completo
+            full_key = f"{cognome_lower} {nome_lower}".strip()
+            if full_key in existing_patients_by_fullname:
+                return existing_patients_by_fullname[full_key]
+            
+            # 2. Cerca per cognome
+            if cognome_lower in existing_patients_by_cognome:
+                patients_same_cognome = existing_patients_by_cognome[cognome_lower]
+                
+                # Se c'è solo un paziente con questo cognome, usa quello
+                if len(patients_same_cognome) == 1:
+                    return patients_same_cognome[0]["id"]
+                
+                # Se ci sono più pazienti, cerca match per nome
+                for p in patients_same_cognome:
+                    # Se il paziente nel DB non ha nome, match!
+                    if not p["nome"]:
+                        return p["id"]
+                    # Se i nomi corrispondono
+                    if p["nome"] == nome_lower:
+                        return p["id"]
+                
+                # Se nessun match specifico ma il nome dal foglio è vuoto, usa il primo
+                if not nome_lower and patients_same_cognome:
+                    return patients_same_cognome[0]["id"]
+            
+            return None
+        
         # STEP 3: Filtra appuntamenti - tieni SOLO quelli VERAMENTE nuovi
         new_appointments = []
         
         for apt in all_appointments:
             full_name = f"{apt['cognome']} {apt['nome']}".strip()
-            full_name_lower = full_name.lower()
             
-            # Cerca se il paziente esiste già (match esatto o per cognome)
-            patient_id = existing_patients_map.get(full_name_lower)
-            if not patient_id:
-                # Prova solo con il cognome
-                patient_id = existing_patients_map.get(apt['cognome'].lower().strip())
+            # Cerca se il paziente esiste già
+            patient_id = find_existing_patient(apt['cognome'], apt['nome'])
             
             if patient_id:
                 # Paziente esiste - verifica se l'appuntamento esiste già
                 apt_key = (patient_id, apt["date"], apt["ora"])
                 if apt_key in existing_apt_keys:
                     # Appuntamento già esistente - SKIP
+                    logger.debug(f"Skip appuntamento esistente: {full_name} {apt['date']} {apt['ora']}")
                     continue
                 else:
                     # Paziente esiste ma appuntamento nuovo - aggiungi senza conflitto
                     apt["_matched_patient_id"] = patient_id
                     new_appointments.append(apt)
+                    logger.debug(f"Nuovo appuntamento per paziente esistente: {full_name}")
             else:
                 # Paziente NON esiste - questo potrebbe essere un conflitto
                 new_appointments.append(apt)
