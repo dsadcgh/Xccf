@@ -352,23 +352,34 @@ export default function AIAssistant() {
     }
   };
 
-  // Image upload and extraction
+  // Image upload and extraction - supports multiple files
   const handleImageSelect = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (!file.type.startsWith('image/')) {
-        toast.error("Seleziona un'immagine valida (JPG, PNG, WEBP)");
-        return;
-      }
-      setPendingImage(file);
-      setExtractedPatients([]);
-      toast.success("Immagine selezionata. Scrivi il tipo di paziente (es. 'aggiungi come PICC') o clicca 'Estrai' per iniziare.");
+    const selectedFiles = Array.from(e.target.files || []);
+    if (selectedFiles.length === 0) return;
+    
+    // Filter only images
+    const validFiles = selectedFiles.filter(file => file.type.startsWith('image/'));
+    
+    if (validFiles.length === 0) {
+      toast.error("Seleziona immagini valide (JPG, PNG, WEBP)");
+      return;
     }
+    
+    // Limit to 5 files
+    const filesToAdd = validFiles.slice(0, 5 - pendingImages.length);
+    
+    if (filesToAdd.length < validFiles.length) {
+      toast.warning(`Puoi caricare massimo 5 immagini. Aggiunte solo ${filesToAdd.length}.`);
+    }
+    
+    setPendingImages(prev => [...prev, ...filesToAdd].slice(0, 5));
+    setExtractedPatients([]);
+    toast.success(`${filesToAdd.length} immagine/i selezionata/e. Scrivi il tipo (es. 'aggiungi come PICC') o clicca 'Estrai'.`);
   };
 
   const extractPatientsFromImage = async (tipoDefault = "PICC") => {
-    if (!pendingImage) {
-      toast.error("Prima seleziona un'immagine");
+    if (pendingImages.length === 0) {
+      toast.error("Prima seleziona almeno un'immagine");
       return;
     }
 
@@ -376,7 +387,12 @@ export default function AIAssistant() {
     
     try {
       const formData = new FormData();
-      formData.append('file', pendingImage);
+      
+      // Append all files
+      pendingImages.forEach((file, index) => {
+        formData.append('files', file);
+      });
+      
       formData.append('ambulatorio', ambulatorio);
       formData.append('tipo_default', tipoDefault);
       
@@ -388,15 +404,15 @@ export default function AIAssistant() {
         setExtractedPatients(response.data.patients);
         setMessages(prev => [...prev, {
           role: "assistant",
-          content: `📷 **Estratti ${response.data.count} pazienti dall'immagine:**\n\n${response.data.patients.map(p => `• ${p.cognome} ${p.nome}`).join('\n')}\n\n✅ Scrivi "**conferma**" per aggiungerli come ${tipoDefault}, oppure "**annulla**" per cancellare.`,
+          content: `📷 **Estratti ${response.data.count} pazienti da ${response.data.files_processed} file:**\n\n${response.data.patients.map(p => `• ${p.cognome} ${p.nome}`).join('\n')}\n\n✅ Scrivi "**conferma**" per aggiungerli come ${tipoDefault}, oppure "**annulla**" per cancellare.`,
           extractedPatients: response.data.patients,
           tipoDefault: tipoDefault
         }]);
       } else {
-        toast.warning("Nessun nome trovato nell'immagine");
+        toast.warning("Nessun nome trovato nelle immagini");
         setMessages(prev => [...prev, {
           role: "assistant",
-          content: "❌ Non sono riuscito a identificare nomi di pazienti nell'immagine. Prova con un'immagine più chiara o scrivi i nomi manualmente."
+          content: "❌ Non sono riuscito a identificare nomi di pazienti nelle immagini. Prova con immagini più chiare o scrivi i nomi manualmente."
         }]);
       }
     } catch (error) {
@@ -404,7 +420,7 @@ export default function AIAssistant() {
       toast.error("Errore nell'estrazione");
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: "❌ Errore nell'estrazione dei nomi dall'immagine. Riprova."
+        content: "❌ Errore nell'estrazione dei nomi dalle immagini. Riprova."
       }]);
     } finally {
       setIsExtracting(false);
@@ -433,18 +449,22 @@ export default function AIAssistant() {
       }
       
       setExtractedPatients([]);
-      setPendingImage(null);
+      setPendingImages([]);
     } catch (error) {
       toast.error("Errore nella creazione dei pazienti");
     }
   };
 
-  const clearPendingImage = () => {
-    setPendingImage(null);
+  const clearPendingImages = () => {
+    setPendingImages([]);
     setExtractedPatients([]);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+  };
+  
+  const removePendingImage = (index) => {
+    setPendingImages(prev => prev.filter((_, i) => i !== index));
   };
 
   const sendMessage = async () => {
