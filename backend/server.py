@@ -999,6 +999,23 @@ async def delete_appointment(appointment_id: str, payload: dict = Depends(verify
     await db.appointments.delete_one({"id": appointment_id})
     return {"message": "Appuntamento eliminato"}
 
+@api_router.delete("/appointments/all/{ambulatorio}")
+async def delete_all_appointments(ambulatorio: str, payload: dict = Depends(verify_token)):
+    """Elimina TUTTI gli appuntamenti dell'ambulatorio"""
+    if ambulatorio not in payload["ambulatori"]:
+        raise HTTPException(status_code=403, detail="Non hai accesso a questo ambulatorio")
+    
+    # Count before delete
+    count = await db.appointments.count_documents({"ambulatorio": ambulatorio})
+    
+    # Delete all
+    result = await db.appointments.delete_many({"ambulatorio": ambulatorio})
+    
+    return {
+        "message": f"Eliminati {result.deleted_count} appuntamenti",
+        "deleted_count": result.deleted_count
+    }
+
 # ============== SLOT CHIUSI (CHIUDI AGENDA) ==============
 class ClosedSlotCreate(BaseModel):
     data: str  # YYYY-MM-DD
