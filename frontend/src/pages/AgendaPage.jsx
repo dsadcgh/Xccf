@@ -1918,7 +1918,20 @@ export default function AgendaPage() {
             )}
           </div>
 
-          <div className="flex justify-end">
+          <div className="flex justify-between">
+            <div className="flex gap-2">
+              {ignoredNamesList.length > 0 && (
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  className="text-red-600 border-red-300 hover:bg-red-50"
+                  onClick={handleClearIgnoredNames}
+                >
+                  <Trash2 className="w-4 h-4 mr-1" />
+                  Svuota tutto
+                </Button>
+              )}
+            </div>
             <Button variant="outline" onClick={() => setIgnoredNamesDialogOpen(false)}>
               Chiudi
             </Button>
