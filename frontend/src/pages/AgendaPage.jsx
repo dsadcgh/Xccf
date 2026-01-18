@@ -1907,34 +1907,6 @@ export default function AgendaPage() {
                           </div>
                         );
                       })}
-                              
-                              {/* Selettore associazione se non selezionato e ci sono 2+ selezionati */}
-                              {!isSelected && (syncConflictChoices[conflict.id] || []).length >= 2 && (
-                                <div className="ml-2 flex items-center gap-1">
-                                  <span className="text-xs text-gray-500">→</span>
-                                  <select
-                                    className="text-xs border rounded px-1 py-0.5 bg-white"
-                                    value={nameAssociations[`${conflict.id}_${option.name}`] || (syncConflictChoices[conflict.id] || [])[0] || ""}
-                                    onClick={(e) => e.stopPropagation()}
-                                    onChange={(e) => {
-                                      e.stopPropagation();
-                                      setNameAssociations(prev => ({
-                                        ...prev,
-                                        [`${conflict.id}_${option.name}`]: e.target.value
-                                      }));
-                                    }}
-                                  >
-                                    {(syncConflictChoices[conflict.id] || []).map(selectedName => (
-                                      <option key={selectedName} value={selectedName}>
-                                        {selectedName}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
                         
                         {/* Pulsanti rapidi */}
                         <div className="flex flex-wrap gap-2 mt-3 pt-2 border-t border-gray-200">
