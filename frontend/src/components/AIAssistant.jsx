@@ -486,14 +486,14 @@ export default function AIAssistant() {
         return;
       } else if (lowerMsg.includes("annulla") || lowerMsg.includes("no")) {
         setExtractedPatients([]);
-        setPendingImage(null);
+        setPendingImages([]);
         setMessages(prev => [...prev, { role: "assistant", content: "❌ Operazione annullata. I pazienti non sono stati aggiunti." }]);
         return;
       }
     }
     
-    // Check if user wants to extract from pending image with specific type
-    if (pendingImage && (lowerMsg.includes("picc") || lowerMsg.includes("med") || lowerMsg.includes("estrai") || lowerMsg.includes("aggiungi"))) {
+    // Check if user wants to extract from pending images with specific type
+    if (pendingImages.length > 0 && (lowerMsg.includes("picc") || lowerMsg.includes("med") || lowerMsg.includes("estrai") || lowerMsg.includes("aggiungi"))) {
       let tipo = "PICC";
       if (lowerMsg.includes("med") && !lowerMsg.includes("picc")) {
         tipo = "MED";
